@@ -1,5 +1,7 @@
 # Virtual Voice
 
+> [English](README.en.md) | 中文
+
 <div align="center">
 
 ![Logo](logo.png)
