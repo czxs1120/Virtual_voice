@@ -8,6 +8,8 @@
 
 **Virtual Voice Client - Windows Virtual Microphone Application**
 
+Using VB-Cable virtual microphone, forward recordings and real-time voice to voice software, helping voice customer service and similar positions reduce repetitive speech work.
+
 [![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
 [![Tauri](https://img.shields.io/badge/Tauri-2.5.0-2c2255?style=flat&logo=tauri)](https://tauri.app/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb?style=flat&logo=react)](https://react.dev/)
