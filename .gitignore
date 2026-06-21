@@ -1,0 +1,9 @@
+node_modules
+dist
+nsis-3.11
+src-tauri/target
+.codegraph
+.reasonix
+.trae
+src-tauri/debug.log
+rustup-init.exe

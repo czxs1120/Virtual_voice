@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual Voice</title>
+    <style>
+      /* Ensure visible content while loading */
+      body { background: #0f172a; color: #94a3b8; margin: 0; }
+      #loading {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-family: sans-serif; font-size: 18px;
+        z-index: 9999;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">正在加载 Virtual Voice...</div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Hide loading when React mounts
+      const observer = new MutationObserver(() => {
+        const root = document.getElementById('root');
+        if (root && root.children.length > 0) {
+          const el = document.getElementById('loading');
+          if (el) el.style.display = 'none';
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.getElementById('root'), { childList: true, subtree: true });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+VB-CABLE Virtual Audio Device Driver
+======================================
+Copyright (c) 2010-2015 Vincent Burel (VB-Audio Software)
+All rights reserved.
+
+This software includes the VB-CABLE Virtual Audio Device Driver,
+which is donationware. It is distributed in accordance with the
+license agreement included in the VB-CABLE package.
+
+VB-CABLE is developed by VB-Audio Software (https://vb-audio.com/Cable/)
+
+VB-CABLE is donationware - all participations are welcome.
