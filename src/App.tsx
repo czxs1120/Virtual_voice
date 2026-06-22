@@ -231,6 +231,7 @@ function App() {
       // Route the same buffer to VB-CABLE via the backend (raw PCM).
       const vbcable = vbcableDeviceRef.current;
       if (vbcable) {
+        console.log("Attempting to output to VB-CABLE:", vbcable);
         try {
           const ch0 = buffer.getChannelData(0);
           const vol = playbackVolumeRef.current;
@@ -238,13 +239,20 @@ function App() {
           const view = new DataView(out);
           for (let i = 0; i < ch0.length; i++)
             view.setFloat32(i * 4, Math.max(-1, Math.min(1, ch0[i] * vol)), true);
-          invoke("play_audio_raw", {
+          await invoke<void>("play_audio_raw", {
             pcmBytes: new Uint8Array(out),
             sampleRate: buffer.sampleRate, channels: 1,
             deviceName: vbcable, enableMonitoring: false,
-          }).then(() => showStatus("已输出到虚拟麦克风"))
-            .catch((e) => { showStatus("输出失败: " + e); });
-        } catch (_) {}
+          });
+          console.log("VB-CABLE output completed - bytes sent:", out.byteLength);
+          showStatus("已输出到虚拟麦克风: " + vbcable);
+        } catch (e) {
+          console.error("VB-CABLE output failed:", e);
+          showStatus("输出到虚拟麦克风失败: " + (e as Error).message);
+        }
+      } else {
+        console.warn("No VB-CABLE device found, audio only plays locally");
+        showStatus("未找到虚拟麦克风设备，仅本地播放");
       }
     } catch (e) {
       if (playTokenRef.current !== my) return; // silent cancel
@@ -554,33 +562,39 @@ function App() {
         await invoke("stop_transfer");
         setIsTransferring(false);
         showStatus("中转已关闭");
+        console.log("Transfer stopped");
       } catch (e) {
         console.error("Failed to stop transfer:", e);
-        showStatus("关闭中转失败");
+        showStatus("关闭中转失败: " + (e as Error).message);
       }
     } else {
+      const targetDevice = selectedOutputDevice || null;
+      console.log("Starting transfer to device:", targetDevice);
       try {
         await invoke("start_transfer", {
-          outputDevice: selectedOutputDevice || null,
+          outputDevice: targetDevice,
         });
         setIsTransferring(true);
-        showStatus("中转已开启");
+        showStatus("中转已开启: " + (targetDevice || "默认设备"));
+        console.log("Transfer started successfully");
       } catch (e) {
         const msg = (e as Error).message || String(e);
+        console.error("Failed to start transfer:", msg);
         // If transfer was somehow already running, stop it first then retry
         if (msg.includes("already running")) {
+          console.log("Transfer already running, attempting to restart...");
           try { await invoke("stop_transfer"); } catch (_) {}
           try {
-            await invoke("start_transfer", { outputDevice: selectedOutputDevice || null });
+            await invoke("start_transfer", { outputDevice: targetDevice });
             setIsTransferring(true);
-            showStatus("中转已开启");
+            showStatus("中转已开启: " + (targetDevice || "默认设备"));
             return;
           } catch (e2) {
+            console.error("Restart failed:", (e2 as Error).message);
             showStatus("开启中转失败: " + (e2 as Error).message);
             return;
           }
         }
-        console.error("Failed to start transfer:", e);
         showStatus("开启中转失败: " + msg);
       }
     }
@@ -1268,7 +1282,7 @@ function App() {
             虚拟麦克风: {driverStatus === "Installed" ? "就绪" : driverStatus === "NotInstalled" ? "未安装" : "..."}
           </span>
           <span>|</span>
-          <span>Virtual Voice v1.3.0</span>
+          <span>Virtual Voice v1.6.0</span>
         </span>
       </footer>
     </div>

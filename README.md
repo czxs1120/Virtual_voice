@@ -10,7 +10,7 @@
 
 借助 VB-Cable 虚拟麦克风，将录音与实时语音中转至语音软件，帮助语音客服等岗位减少重复话术的工作。
 
-[![版本](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
+[![版本](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
 [![Tauri](https://img.shields.io/badge/Tauri-2.5.0-2c2255?style=flat&logo=tauri)](https://tauri.app/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb?style=flat&logo=react)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

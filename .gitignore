@@ -7,3 +7,5 @@ src-tauri/target
 .trae
 src-tauri/debug.log
 rustup-init.exe
+debug.log
+reasonix.toml

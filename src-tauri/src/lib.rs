@@ -370,6 +370,9 @@ fn play_audio_to_device(
     device_name: Option<&str>,
     enable_monitoring: bool,
 ) -> Result<(), String> {
+    write_log(&format!("play_audio_to_device called: device={}, sample_rate={}, samples_len={}, monitoring={}", 
+        device_name.unwrap_or("default"), sample_rate, samples.len(), enable_monitoring));
+    
     let host = cpal::default_host();
     // Device lookup is tolerant across environments:
     //   1) exact match, 2) case-insensitive substring match (handles locale/
@@ -379,7 +382,10 @@ fn play_audio_to_device(
     let device = match device_name {
         Some(name) => {
             let name_lower = name.to_lowercase();
-            let mut devices = host.output_devices().map_err(|e| e.to_string())?;
+            let mut devices = host.output_devices().map_err(|e| {
+                write_log(&format!("ERROR: Failed to enumerate output devices: {}", e));
+                e.to_string()
+            })?;
             // 1) exact match
             let mut exact = devices.find(|d| d.name().map(|n| n == name).unwrap_or(false));
             // 2) case-insensitive substring match (re-enumerate if exact failed)
@@ -393,15 +399,26 @@ fn play_audio_to_device(
             }
             // 3) fall back to default output device
             match exact {
-                Some(d) => d,
-                None => host
-                    .default_output_device()
-                    .ok_or_else(|| format!("Output device '{}' not found", name))?,
+                Some(d) => {
+                    write_log(&format!("Device found (exact or substring match): {:?}", d.name()));
+                    d
+                },
+                None => {
+                    write_log(&format!("WARN: Device '{}' not found, falling back to default", name));
+                    host.default_output_device()
+                        .ok_or_else(|| format!("Output device '{}' not found", name))?
+                }
             }
         }
         None => host.default_output_device().ok_or("No default output device")?,
     };
-    let supported = device.default_output_config().map_err(|e| e.to_string())?;
+    let device_actual_name = device.name().unwrap_or_default();
+    write_log(&format!("Using output device: {}", device_actual_name));
+    
+    let supported = device.default_output_config().map_err(|e| {
+        write_log(&format!("ERROR: Failed to get device config: {}", e));
+        e.to_string()
+    })?;
     let config = supported.config();
     let device_rate = config.sample_rate.0;
     let channels = config.channels as usize;
@@ -457,7 +474,11 @@ fn play_audio_to_device(
             None,
         )
         .map_err(|e| format!("Cannot build output stream: {}", e))?;
-    stream.play().map_err(|e| e.to_string())?;
+    stream.play().map_err(|e| {
+        write_log(&format!("ERROR: Failed to play audio stream on device '{}': {}", device_actual_name, e));
+        e.to_string()
+    })?;
+    write_log(&format!("Audio stream started successfully on device '{}'", device_actual_name));
 
     // Monitor: also play through default speakers (optional)
     let _monitor: Option<cpal::Stream> = if enable_monitoring {
@@ -467,7 +488,7 @@ fn play_audio_to_device(
                 let s2 = Arc::clone(&samples);
                 let p2 = Arc::new(AtomicUsize::new(0));
                 let mon_stop = Arc::clone(&stop_flag);
-                default_dev.build_output_stream(
+                let mon_stream = default_dev.build_output_stream(
                     &mon_cfg.config(),
                     move |data, _| {
                         if mon_stop.load(Ordering::SeqCst) { data.fill(0.0); return; }
@@ -479,7 +500,8 @@ fn play_audio_to_device(
                     },
                     |err| log::error!("Monitor error: {}", err),
                     None,
-                ).ok().map(|s: cpal::Stream| { let _ = s.play(); s })
+                ).ok();
+                mon_stream.map(|s: cpal::Stream| { let _ = s.play(); s })
             } else { None }
         } else { None }
     } else { None };
@@ -535,7 +557,10 @@ fn read_file_base64(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn start_transfer(output_device: Option<String>) -> Result<(), String> {
+    write_log(&format!("start_transfer called with output_device: {:?}", output_device));
+    
     if TRANSFER_RUNNING.load(Ordering::SeqCst) {
+        write_log("Transfer already running, returning error");
         return Err("Transfer is already running".to_string());
     }
 
@@ -544,27 +569,61 @@ fn start_transfer(output_device: Option<String>) -> Result<(), String> {
     // Input: default microphone.
     let input_device = host
         .default_input_device()
-        .ok_or_else(|| "No default input device (microphone) found".to_string())?;
+        .ok_or_else(|| {
+            write_log("ERROR: No default input device found");
+            "No default input device (microphone) found".to_string()
+        })?;
     let input_name = input_device.name().unwrap_or_default();
+    write_log(&format!("Input device: {}", input_name));
+    
     let input_config = input_device
         .default_input_config()
-        .map_err(|e| format!("Cannot get input config: {}", e))?;
+        .map_err(|e| {
+            write_log(&format!("ERROR: Cannot get input config: {}", e));
+            format!("Cannot get input config: {}", e)
+        })?;
 
-    // Output device.
+    // Output device - use tolerant matching (same as play_audio_to_device):
+    //   1) exact match, 2) case-insensitive substring match, 3) fall back to default
     let output_device = match &output_device {
-        Some(name) => host
-            .output_devices()
-            .map_err(|e| e.to_string())?
-            .find(|d| d.name().map(|n| n == name.as_str()).unwrap_or(false))
-            .ok_or_else(|| format!("Output device '{}' not found", name))?,
-        None => host
-            .default_output_device()
-            .ok_or_else(|| "No default output device".to_string())?,
+        Some(name) => {
+            let name_lower = name.to_lowercase();
+            let mut devices = host.output_devices().map_err(|e| e.to_string())?;
+            // 1) exact match
+            let mut exact = devices.find(|d| d.name().map(|n| n.as_str() == name.as_str()).unwrap_or(false));
+            // 2) case-insensitive substring match (re-enumerate if exact failed)
+            if exact.is_none() {
+                let mut devices2 = host.output_devices().map_err(|e| e.to_string())?;
+                exact = devices2.find(|d| {
+                    d.name()
+                        .map(|n| n.to_lowercase().contains(&name_lower))
+                        .unwrap_or(false)
+                });
+            }
+            // 3) fall back to default output device
+            match exact {
+                Some(d) => d,
+                None => {
+                    log::warn!("Output device '{}' not found, falling back to default", name);
+                    host.default_output_device()
+                        .ok_or_else(|| format!("Output device '{}' not found and no default device available", name))?
+                }
+            }
+        }
+        None => host.default_output_device().ok_or_else(|| {
+            write_log("ERROR: No default output device available");
+            "No default output device".to_string()
+        })?,
     };
     let output_name = output_device.name().unwrap_or_default();
+    write_log(&format!("Output device selected: {}", output_name));
+    
     let output_config = output_device
         .default_output_config()
-        .map_err(|e| format!("Cannot get output config: {}", e))?;
+        .map_err(|e| {
+            write_log(&format!("ERROR: Cannot get output config: {}", e));
+            format!("Cannot get output config: {}", e)
+        })?;
 
     let _sample_rate = input_config.sample_rate().0.min(output_config.sample_rate().0);
     let _channels = input_config.channels().min(output_config.channels()) as usize;
@@ -695,8 +754,14 @@ fn start_transfer(output_device: Option<String>) -> Result<(), String> {
         _ => return Err("Unsupported output sample format".to_string()),
     };
 
-    input_stream.play().map_err(|e| e.to_string())?;
-    output_stream.play().map_err(|e| e.to_string())?;
+    input_stream.play().map_err(|e| {
+        write_log(&format!("ERROR: Failed to start input stream: {}", e));
+        e.to_string()
+    })?;
+    output_stream.play().map_err(|e| {
+        write_log(&format!("ERROR: Failed to start output stream: {}", e));
+        e.to_string()
+    })?;
 
     *transfer_handles().lock().unwrap() = Some(TransferHandles {
         _input_stream: SendStream(input_stream),
@@ -704,6 +769,7 @@ fn start_transfer(output_device: Option<String>) -> Result<(), String> {
     });
     TRANSFER_RUNNING.store(true, Ordering::SeqCst);
 
+    write_log(&format!("SUCCESS: Audio transfer started ({} → {})", input_name, output_name));
     log::info!("Audio transfer started ({} → {})", input_name, output_name);
     Ok(())
 }
@@ -800,12 +866,43 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Simple file logger for debugging production issues
+// ---------------------------------------------------------------------------
+
+use std::io::Write;
+
+fn get_log_file_path() -> PathBuf {
+    app_data_base_dir().join("VirtualVoice").join("debug.log")
+}
+
+fn write_log(msg: &str) {
+    let path = get_log_file_path();
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let timestamp = chrono_timestamp();
+        let _ = file.write_all(format!("[{}] {}\n", timestamp, msg).as_bytes());
+    }
+}
+
+fn chrono_timestamp() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Application entry point
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize env_logger (for console output in dev mode)
     env_logger::init();
+    
+    // Write startup log to file
+    write_log("Virtual Voice application starting");
+    write_log(&format!("Log file location: {}", get_log_file_path().display()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())

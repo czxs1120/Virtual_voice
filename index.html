@@ -18,6 +18,17 @@
   <body>
     <div id="loading">正在加载 Virtual Voice...</div>
     <div id="root"></div>
+    <script>
+      // Catch global JS errors and show them on screen (for debugging install issues)
+      window.addEventListener("error", function (e) {
+        var el = document.getElementById("loading");
+        if (el) {
+          el.innerHTML = "页面加载失败:<br><br>" + (e.message || e.error || e) +
+            "<br><br>请检查 WebView2 运行时版本或联系开发者。";
+          el.style.color = "#f87171";
+        }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Hide loading when React mounts
