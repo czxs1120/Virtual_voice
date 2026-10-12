@@ -24,7 +24,7 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 ## Features
 
 - **Recording Management** - Record, import, play, and delete audio clips
-- **Keyboard Shortcuts** - Play recordings quickly using Ctrl+1~9 keys
+- **Keyboard Shortcuts** - Play recordings quickly using Ctrl+1~9 (global hotkeys work even when unfocused)
 - **Real-time Voice Transfer** - Forward microphone audio to virtual audio devices in real-time
 - **Virtual Microphone Support** - Integrated VB-Audio Virtual Cable driver installation/uninstallation
 - **Mini Player Mode** - Collapsible compact floating player
