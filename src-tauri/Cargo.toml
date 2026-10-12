@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -24,3 +24,8 @@ dirs = "5"
 cpal = "0.15"
 chrono = "0.4"
 zip = "2"
+
+# Global hotkeys rely on platform backends that pull GTK on Linux; this app
+# targets Windows, so keep the plugin Windows-only.
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-global-shortcut = "=2.3.2"

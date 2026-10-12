@@ -19,6 +19,18 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// Apply CREATE_NO_WINDOW on Windows; no-op elsewhere.
+fn hide_console(cmd: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = cmd;
+    }
+}
+
 /// Whether the current process is running with Administrator privileges.
 /// Used to give clearer guidance when driver install/uninstall will fail.
 #[cfg(windows)]
@@ -120,10 +132,10 @@ pub fn check_driver_installed() -> DriverStatus {
     // This is more reliable than checking the registry, as pnputil
     // installs the driver package but may not create a registry service entry
     // for software-enumerated virtual audio devices.
-    let output = Command::new("pnputil")
-        .args(["/enum-drivers"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
+    let mut enum_cmd = Command::new("pnputil");
+    enum_cmd.args(["/enum-drivers"]);
+    hide_console(&mut enum_cmd);
+    let output = enum_cmd.output();
 
     match output {
         Ok(out) if out.status.success() => {
@@ -140,7 +152,10 @@ pub fn check_driver_installed() -> DriverStatus {
         Err(_) | Ok(_) => {
             // Fallback: check registry with full HKLM path
             let key = format!("HKLM\\{}", DRIVER_REG_KEY);
-            if let Ok(out) = Command::new("reg").args(["query", &key]).creation_flags(CREATE_NO_WINDOW).output() {
+            let mut reg_cmd = Command::new("reg");
+            reg_cmd.args(["query", &key]);
+            hide_console(&mut reg_cmd);
+            if let Ok(out) = reg_cmd.output() {
                 if out.status.success() {
                     return DriverStatus::Installed;
                 }
@@ -241,10 +256,10 @@ pub fn install_vbcable_driver(app_handle: tauri::AppHandle) -> DriverActionResul
     let setup_path = tmp_dir.join(setup_name);
 
     // Run the VB-Audio installer (uses Inno Setup: /VERYSILENT suppresses UI)
-    let result = Command::new(&setup_path)
-        .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
+    let mut setup_cmd = Command::new(&setup_path);
+    setup_cmd.args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
+    hide_console(&mut setup_cmd);
+    let result = setup_cmd.output();
 
     match result {
         Ok(output) => {
