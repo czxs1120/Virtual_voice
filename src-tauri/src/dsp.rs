@@ -278,4 +278,17 @@ mod tests {
         p.process_with(&mut buf, &settings);
         assert!(src.iter().zip(&buf).all(|(a, b)| (a - b).abs() < 1e-6));
     }
+
+    #[test]
+    fn gain_scales_signal() {
+        let mut p = Processor::new(48_000);
+        let settings = DspSettings {
+            gain_db: 6.0,
+            limiter_enabled: false,
+            ..DspSettings::default()
+        };
+        let mut buf = sine(0.1, 4_800);
+        p.process_with(&mut buf, &settings);
+        assert!((peak(&buf) - 0.1 * db_to_lin(6.0)).abs() < 1e-3, "peak {}", peak(&buf));
+    }
 }
