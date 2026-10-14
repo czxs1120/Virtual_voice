@@ -24,7 +24,7 @@
 ## 功能特性
 
 - **录音管理** - 录制、导入、播放、删除语音片段
-- **快捷键播放** - 使用 Ctrl+1~9 数字键快速播放录音
+- **快捷键播放** - 使用 Ctrl+1~9 数字键快速播放录音（支持全局热键，应用失焦时也可用）
 - **实时语音中转** - 将麦克风声音实时转发到虚拟音频设备
 - **虚拟麦克风支持** - 集成 VB-Audio Virtual Cable 驱动安装/卸载
 - **迷你播放器模式** - 可收起为紧凑的悬浮播放器
@@ -141,20 +141,25 @@ npm run tauri build
 ```
 virtual_voice/
 ├── src/                    # React 前端源码
-│   ├── App.tsx            # 主应用组件
-│   ├── main.tsx           # 入口文件
-│   └── index.css          # 全局样式
+│   ├── App.tsx            # 主应用编排
+│   ├── components/        # UI 组件（列表、设置、迷你播放器）
+│   ├── hooks/             # 状态消息、全局热键等 hooks
+│   ├── lib/               # Tauri API 封装、WAV 编解码
+│   ├── types.ts           # 共享类型
+│   ├── main.tsx
+│   └── index.css
 ├── src-tauri/              # Tauri 后端源码
 │   ├── src/
-│   │   ├── main.rs        # Rust 主入口
-│   │   ├── lib.rs         # 库文件
-│   │   └── driver.rs      # 驱动安装逻辑
-│   ├── Cargo.toml         # Rust 依赖配置
-│   ├── tauri.conf.json    # Tauri 配置文件
-│   └── drivers/           # 虚拟驱动文件
-├── package.json           # Node.js 依赖配置
-├── vite.config.ts         # Vite 配置
-└── tailwind.config.js     # Tailwind CSS 配置
+│   │   ├── main.rs
+│   │   ├── lib.rs         # 录音/播放/中转/配置
+│   │   └── driver.rs      # VB-CABLE 驱动管理
+│   ├── capabilities/      # 权限（含 Windows 全局热键）
+│   ├── resources/drivers/ # 虚拟驱动资源
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── package.json
+├── vite.config.ts
+└── tailwind.config.js
 ```
 
 ---
