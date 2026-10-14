@@ -2,15 +2,24 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { api } from "./lib/api";
-import { decodeToWavDataUrl } from "./lib/wav";
+import { audioBufferToWavDataUrl, decodeToWavDataUrl } from "./lib/wav";
+import { WaveformEditor } from "./components/WaveformEditor";
 import { useStatusMessage } from "./hooks/useStatusMessage";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
+import { useTrayEvents } from "./hooks/useTrayEvents";
+import { findHotkeyConflict, hotkeyLabel, normalizeRecording } from "./lib/hotkeys";
+import { HotkeyInput } from "./components/HotkeyInput";
 import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
 import { SettingsModal } from "./components/SettingsModal";
+import { TransferDspPanel } from "./components/TransferDspPanel";
+import { ScenePanel } from "./components/ScenePanel";
 import {
   DEFAULT_CONFIG,
+  DEFAULT_DSP,
   type AppConfig,
+  type DspSettings,
+  type Scene,
   type AudioDevice,
   type DriverStatus,
   type Recording,
@@ -24,7 +33,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<"storage" | "audio">("storage");
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [newRecordingName, setNewRecordingName] = useState("");
-  const [selectedKey, setSelectedKey] = useState<number | null>(null);
+  const [newHotkey, setNewHotkey] = useState<string | null>(null);
   const { statusMessage, showStatus } = useStatusMessage();
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
   const [selectedOutputDevice, setSelectedOutputDevice] = useState("");
@@ -38,6 +47,7 @@ function App() {
   const playbackVolumeRef = useRef(1.0);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameText, setRenameText] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const compactTransitionRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -89,7 +99,7 @@ function App() {
   const loadRecordings = useCallback(async () => {
     try {
       const list = await api.getRecordings(configRef.current.recordings_dir || null);
-      setRecordings(list);
+      setRecordings(list.map(normalizeRecording).sort((a, b) => a.id - b.id));
     } catch (e) {
       console.error("Failed to load recordings:", e);
     }
@@ -122,6 +132,30 @@ function App() {
     api.stopAudio().catch(() => {});
   }, []);
 
+  const loadBuffer = useCallback(async (id: number): Promise<AudioBuffer> => {
+    const cached = bufferCacheRef.current.get(id);
+    if (cached) return cached;
+    const dataUrl = await api.getAudio(id, configRef.current.recordings_dir || null);
+    const base64 = dataUrl.split(",", 2)[1] || "";
+    const binary = atob(base64);
+    const arr = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+    const buffer = await ensureAudioCtx().decodeAudioData(arr.buffer);
+    bufferCacheRef.current.set(id, buffer);
+    return buffer;
+  }, []);
+
+  const saveTrimmed = async (id: number, trimmed: AudioBuffer) => {
+    const recording = recordingsRef.current.find((r) => r.id === id);
+    if (!recording) return;
+    if (activeIdRef.current === id) stopPlayback();
+    await api.saveAudio(id, audioBufferToWavDataUrl(trimmed), configRef.current.recordings_dir || null);
+    await persist({ ...recording, duration_ms: Math.round(trimmed.duration * 1000) });
+    bufferCacheRef.current.set(id, trimmed);
+    await loadRecordings();
+    showStatus(`已裁剪为 ${trimmed.duration.toFixed(2)} 秒`);
+  };
+
   const doPlay = async (id: number) => {
     const my = ++playTokenRef.current;
     try {
@@ -129,18 +163,8 @@ function App() {
       if (ctx.state === "suspended") await ctx.resume();
       if (playTokenRef.current !== my || activeIdRef.current !== id) return;
 
-      let buffer = bufferCacheRef.current.get(id);
-      if (!buffer) {
-        const dataUrl = await api.getAudio(id, configRef.current.recordings_dir || null);
-        if (playTokenRef.current !== my || activeIdRef.current !== id) return;
-        const base64 = dataUrl.split(",", 2)[1] || "";
-        const binary = atob(base64);
-        const arr = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-        if (playTokenRef.current !== my || activeIdRef.current !== id) return;
-        buffer = await ctx.decodeAudioData(arr.buffer);
-        bufferCacheRef.current.set(id, buffer);
-      }
+      const buffer = await loadBuffer(id);
+      if (playTokenRef.current !== my || activeIdRef.current !== id) return;
 
       const monitor = configRef.current.enable_monitoring;
       const gain = ctx.createGain();
@@ -245,7 +269,7 @@ function App() {
 
   playbackVolumeRef.current = playbackVolume;
 
-  useGlobalHotkeys(recordingsRef, handlePlayClick);
+  useGlobalHotkeys(recordings, handlePlayClick);
 
   const refreshAudioDevices = useCallback(async () => {
     try {
@@ -300,8 +324,15 @@ function App() {
     const init = async () => {
       try {
         const saved = await api.getConfig();
-        setConfig({ ...DEFAULT_CONFIG, ...saved });
-        configRef.current = { ...DEFAULT_CONFIG, ...saved };
+        const merged: AppConfig = {
+          ...DEFAULT_CONFIG,
+          ...saved,
+          dsp: { ...DEFAULT_DSP, ...saved.dsp },
+          scenes: saved.scenes ?? [],
+        };
+        setConfig(merged);
+        configRef.current = merged;
+        setPlaybackVolume(merged.playback_volume ?? 1);
       } catch (e) {
         console.error("Failed to load config:", e);
       }
@@ -375,15 +406,18 @@ function App() {
           const recording: Recording = {
             id,
             name,
-            key_binding: selectedKey,
+            key_binding: null,
+            hotkey: null,
+            group: null,
             path: "",
             duration_ms,
           };
           try {
             await api.saveRecording(recording, configRef.current.recordings_dir || null);
             await api.saveAudio(id, audioData, configRef.current.recordings_dir || null);
+            if (newHotkey) await assignHotkey(recording, newHotkey);
             setNewRecordingName("");
-            setSelectedKey(null);
+            setNewHotkey(null);
             await loadRecordings();
             showStatus("录音已保存!");
           } catch (e) {
@@ -432,17 +466,54 @@ function App() {
     }
   };
 
-  const bindKey = async (recordingId: number, key: number) => {
+  const persist = (rec: Recording) =>
+    api.saveRecording(rec, configRef.current.recordings_dir || null);
+
+  /**
+   * Bind `hotkey` to `recording`. A hotkey maps to exactly one recording, so
+   * any other recording holding it is unbound. Returns the displaced one.
+   */
+  const assignHotkey = async (
+    recording: Recording,
+    hotkey: string | null,
+  ): Promise<Recording | undefined> => {
+    const conflict = hotkey
+      ? findHotkeyConflict(recordingsRef.current, hotkey, recording.id)
+      : undefined;
+    if (conflict) {
+      await persist({ ...conflict, hotkey: null, key_binding: null });
+    }
+    // Clear the legacy field so normalizeRecording doesn't resurrect it.
+    await persist({ ...recording, hotkey, key_binding: null });
+    return conflict;
+  };
+
+  const setHotkey = async (recordingId: number, hotkey: string | null) => {
     const recording = recordingsRef.current.find((r) => r.id === recordingId);
     if (!recording) return;
-    const updated = { ...recording, key_binding: key };
     try {
-      await api.saveRecording(updated, configRef.current.recordings_dir || null);
+      const conflict = await assignHotkey(recording, hotkey);
       await loadRecordings();
-      showStatus(`快捷键 Ctrl+${key} 已绑定`);
+      if (!hotkey) showStatus("热键已清除");
+      else if (conflict)
+        showStatus(`${hotkeyLabel(hotkey)} 已从「${conflict.name}」改绑到「${recording.name}」`, 4000);
+      else showStatus(`热键 ${hotkeyLabel(hotkey)} 已绑定`);
     } catch (e) {
-      console.error("Failed to bind key:", e);
+      console.error("Failed to bind hotkey:", e);
       showStatus("绑定失败");
+    }
+  };
+
+  const setGroup = async (recordingId: number, group: string | null) => {
+    const recording = recordingsRef.current.find((r) => r.id === recordingId);
+    if (!recording || (recording.group ?? null) === group) return;
+    try {
+      await persist({ ...recording, group });
+      await loadRecordings();
+      showStatus(group ? `已移入分组「${group}」` : "已移出分组");
+    } catch (e) {
+      console.error("Failed to set group:", e);
+      showStatus("分组失败");
     }
   };
 
@@ -476,7 +547,7 @@ function App() {
       const targetDevice = selectedOutputDevice || null;
       const inputDevice = selectedInputDevice || null;
       try {
-        await api.startTransfer(targetDevice, inputDevice);
+        await api.startTransfer(targetDevice, inputDevice, configRef.current.dsp);
         setIsTransferring(true);
         showStatus("中转已开启: " + (targetDevice || "默认设备"));
       } catch (e) {
@@ -487,7 +558,7 @@ function App() {
             await api.stopTransfer();
           } catch (_) {}
           try {
-            await api.startTransfer(targetDevice, inputDevice);
+            await api.startTransfer(targetDevice, inputDevice, configRef.current.dsp);
             setIsTransferring(true);
             showStatus("中转已开启: " + (targetDevice || "默认设备"));
             return;
@@ -500,6 +571,99 @@ function App() {
       }
     }
   };
+
+  const persistConfigTimer = useRef<number | undefined>(undefined);
+  const updateConfig = useCallback((patch: Partial<AppConfig>) => {
+    const next = { ...configRef.current, ...patch };
+    configRef.current = next;
+    setConfig(next);
+    window.clearTimeout(persistConfigTimer.current);
+    persistConfigTimer.current = window.setTimeout(() => {
+      api.saveConfig(configRef.current).catch((e) => console.error("Failed to save config:", e));
+    }, 400);
+  }, []);
+
+  const changeDsp = (dsp: DspSettings) => {
+    updateConfig({ dsp, active_scene: null });
+    if (isTransferring) {
+      api.setTransferDsp(dsp).catch((e) => console.error("Failed to update DSP:", e));
+    }
+  };
+
+  const changePlaybackVolume = (volume: number) => {
+    setPlaybackVolume(volume);
+    updateConfig({ playback_volume: volume });
+  };
+
+  const saveScene = (name: string, overwriteId?: string) => {
+    const scene: Scene = {
+      id: overwriteId ?? `scene-${Date.now()}`,
+      name,
+      input_device: selectedInputDevice || null,
+      output_device: selectedOutputDevice || null,
+      enable_monitoring: configRef.current.enable_monitoring,
+      playback_volume: playbackVolumeRef.current,
+      dsp: configRef.current.dsp,
+    };
+    const others = configRef.current.scenes.filter((s) => s.id !== scene.id);
+    updateConfig({ scenes: [...others, scene], active_scene: scene.id });
+    showStatus(overwriteId ? `场景「${name}」已更新` : `场景「${name}」已保存`);
+  };
+
+  const deleteScene = (id: string) => {
+    const { scenes, active_scene } = configRef.current;
+    updateConfig({
+      scenes: scenes.filter((s) => s.id !== id),
+      active_scene: active_scene === id ? null : active_scene,
+    });
+  };
+
+  const applyScene = async (scene: Scene) => {
+    const missing: string[] = [];
+    let output = selectedOutputDevice;
+    let input = selectedInputDevice;
+    if (scene.output_device) {
+      if (audioDevices.some((d) => d.name === scene.output_device)) output = scene.output_device;
+      else missing.push(scene.output_device);
+    }
+    if (scene.input_device) {
+      if (inputDevices.some((d) => d.name === scene.input_device)) input = scene.input_device;
+      else missing.push(scene.input_device);
+    }
+    setSelectedOutputDevice(output);
+    setSelectedInputDevice(input);
+    setPlaybackVolume(scene.playback_volume);
+    updateConfig({
+      output_device: output || null,
+      input_device: input || null,
+      enable_monitoring: scene.enable_monitoring,
+      playback_volume: scene.playback_volume,
+      dsp: { ...DEFAULT_DSP, ...scene.dsp },
+      active_scene: scene.id,
+    });
+
+    if (isTransferring) {
+      try {
+        await api.stopTransfer();
+        await api.startTransfer(output || null, input || null, configRef.current.dsp);
+      } catch (e) {
+        setIsTransferring(false);
+        showStatus("切换场景时重启中转失败: " + (e as Error).message, 6000);
+        return;
+      }
+    }
+    showStatus(
+      missing.length
+        ? `已切换到「${scene.name}」，但找不到设备: ${missing.join("、")}`
+        : `已切换到场景「${scene.name}」`,
+      missing.length ? 6000 : 3000,
+    );
+  };
+
+  useTrayEvents({
+    onStopPlayback: stopPlayback,
+    onToggleTransfer: toggleTransfer,
+  });
 
   const importAudio = async () => {
     try {
@@ -527,6 +691,8 @@ function App() {
         id,
         name: name.replace(/\.[^.]+$/, ""),
         key_binding: null,
+        hotkey: null,
+        group: null,
         path: "",
         duration_ms: durationMs,
       };
@@ -641,7 +807,9 @@ function App() {
           onRenameTextChange={setRenameText}
           onCommitRename={(id) => renameRecording(id, renameText)}
           onCancelRename={() => setRenamingId(null)}
-          onBindKey={bindKey}
+          onSetHotkey={setHotkey}
+          onSetGroup={setGroup}
+          onEdit={setEditingId}
           onDelete={deleteRecording}
         />
 
@@ -711,26 +879,22 @@ function App() {
                   max="1"
                   step="0.01"
                   value={playbackVolume}
-                  onChange={(e) => setPlaybackVolume(parseFloat(e.target.value))}
+                  onChange={(e) => changePlaybackVolume(parseFloat(e.target.value))}
                   className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
               <div className="mt-4">
-                <label className="text-sm text-slate-400 mb-2 block">快捷键绑定：</label>
-                <select
-                  className="bg-slate-700 rounded px-3 py-2 border border-slate-600"
-                  value={selectedKey || ""}
-                  onChange={(e) =>
-                    setSelectedKey(e.target.value ? parseInt(e.target.value, 10) : null)
-                  }
-                >
-                  <option value="">不绑定</option>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => (
-                    <option key={k} value={k}>
-                      Ctrl+{k}
-                    </option>
-                  ))}
-                </select>
+                <label className="text-sm text-slate-400 mb-2 block">
+                  新录音热键（可选，支持 F1–F12 或 Ctrl/Alt/Shift 组合）：
+                </label>
+                <div className="flex items-center gap-2">
+                  <HotkeyInput value={newHotkey} onChange={setNewHotkey} />
+                  {newHotkey && findHotkeyConflict(recordings, newHotkey, -1) && (
+                    <span className="text-xs text-amber-400">
+                      已被「{findHotkeyConflict(recordings, newHotkey, -1)!.name}」占用，保存后将改绑
+                    </span>
+                  )}
+                </div>
               </div>
             </section>
 
@@ -757,7 +921,16 @@ function App() {
               >
                 {isTransferring ? "关闭中转" : "开启中转"}
               </button>
+              <TransferDspPanel settings={config.dsp} onChange={changeDsp} active={isTransferring} />
             </section>
+
+            <ScenePanel
+              scenes={config.scenes}
+              activeScene={config.active_scene}
+              onApply={applyScene}
+              onSaveCurrent={saveScene}
+              onDelete={deleteScene}
+            />
           </div>
         </div>
       </main>
@@ -807,8 +980,17 @@ function App() {
         />
       )}
 
+      {editingId !== null && recordings.find((r) => r.id === editingId) && (
+        <WaveformEditor
+          recording={recordings.find((r) => r.id === editingId)!}
+          loadBuffer={loadBuffer}
+          onSave={(trimmed) => saveTrimmed(editingId, trimmed)}
+          onClose={() => setEditingId(null)}
+        />
+      )}
+
       <footer className="bg-slate-800 border-t border-slate-700 px-6 py-3 flex items-center justify-between text-sm text-slate-500">
-        <span>按 Ctrl+数字键 快速播放录音（支持全局热键）</span>
+        <span>按绑定的热键快速播放录音（窗口在后台也有效）</span>
         <span className="flex items-center gap-2">
           <span
             className={`inline-flex items-center gap-1 ${

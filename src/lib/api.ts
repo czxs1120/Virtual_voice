@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConfig,
   AudioDevice,
+  DspSettings,
   DriverActionResult,
+  TransferLevels,
   DriverStatus,
   Recording,
 } from "../types";
@@ -43,8 +45,15 @@ export const api = {
 
   readFileBase64: (path: string) => invoke<string>("read_file_base64", { path }),
 
-  startTransfer: (outputDevice: string | null, inputDevice: string | null) =>
-    invoke("start_transfer", { outputDevice, inputDevice }),
+  startTransfer: (
+    outputDevice: string | null,
+    inputDevice: string | null,
+    dsp: DspSettings,
+  ) => invoke("start_transfer", { outputDevice, inputDevice, dsp }),
+
+  setTransferDsp: (settings: DspSettings) => invoke("set_transfer_dsp", { settings }),
+
+  getTransferLevels: () => invoke<TransferLevels>("get_transfer_levels"),
 
   stopTransfer: () => invoke("stop_transfer"),
 

@@ -1,4 +1,5 @@
 import type { Recording } from "../types";
+import { hotkeyLabel, hotkeySortKey } from "../lib/hotkeys";
 
 interface Props {
   recordings: Recording[];
@@ -16,8 +17,8 @@ export function CompactPlayer({
   expanding,
 }: Props) {
   const bound = recordings
-    .filter((r) => r.key_binding != null)
-    .sort((a, b) => (a.key_binding ?? 0) - (b.key_binding ?? 0));
+    .filter((r) => r.hotkey)
+    .sort((a, b) => hotkeySortKey(a.hotkey!).localeCompare(hotkeySortKey(b.hotkey!)));
 
   return (
     <div
@@ -37,11 +38,11 @@ export function CompactPlayer({
               key={rec.id}
               onClick={() => onPlay(rec.id)}
               className="flex items-center justify-center gap-1 px-1 py-1 bg-slate-700 hover:bg-slate-600 rounded shrink-0 transition-colors"
-              style={{ width: 88 }}
-              title={rec.name}
+              style={{ width: 104 }}
+              title={`${rec.name}（${hotkeyLabel(rec.hotkey)}）`}
             >
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-gradient-to-br from-cyan-500 to-cyan-700 text-white font-bold text-[10px] shadow shadow-cyan-500/20 shrink-0">
-                {rec.key_binding}
+              <span className="inline-flex items-center justify-center px-1 h-5 rounded bg-gradient-to-br from-cyan-500 to-cyan-700 text-white font-bold text-[10px] shadow shadow-cyan-500/20 shrink-0">
+                {hotkeyLabel(rec.hotkey).replace("Ctrl+", "^")}
               </span>
               <span
                 className="text-[11px] truncate text-slate-200"
