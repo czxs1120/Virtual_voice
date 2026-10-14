@@ -1,15 +1,18 @@
 import type { AppConfig, AudioDevice, DriverStatus } from "../types";
+import { TtsSettingsPanel } from "./TtsSettingsPanel";
+
+export type SettingsTab = "storage" | "audio" | "tts";
 
 interface Props {
   config: AppConfig;
-  settingsTab: "storage" | "audio";
+  settingsTab: SettingsTab;
   driverStatus: DriverStatus;
   inputDevices: AudioDevice[];
   audioDevices: AudioDevice[];
   selectedInputDevice: string;
   selectedOutputDevice: string;
   onClose: () => void;
-  onTabChange: (tab: "storage" | "audio") => void;
+  onTabChange: (tab: SettingsTab) => void;
   onConfigChange: (config: AppConfig) => void;
   onSelectRecordingsDir: () => void;
   onInputDeviceChange: (name: string) => void;
@@ -88,6 +91,16 @@ export function SettingsModal({
             }`}
           >
             音频设备
+          </button>
+          <button
+            onClick={() => onTabChange("tts")}
+            className={`px-4 py-2 font-medium transition-colors ${
+              settingsTab === "tts"
+                ? "text-cyan-400 border-b-2 border-cyan-400"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            语音合成
           </button>
         </div>
 
@@ -267,6 +280,13 @@ export function SettingsModal({
                 </button>
               </div>
             </>
+          )}
+
+          {settingsTab === "tts" && (
+            <TtsSettingsPanel
+              settings={config.tts}
+              onChange={(tts) => onConfigChange({ ...config, tts })}
+            />
           )}
 
           <button

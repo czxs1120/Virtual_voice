@@ -43,6 +43,37 @@ export interface AppConfig {
   dsp: DspSettings;
   scenes: Scene[];
   active_scene: string | null;
+  tts: TtsSettings;
+}
+
+export type TtsProvider = "sapi" | "openai" | "azure";
+
+export interface TtsSettings {
+  provider: TtsProvider;
+  sapi: { voice: string | null; rate: number };
+  openai: { base_url: string; model: string; voice: string; speed: number };
+  azure: { region: string; voice: string; rate_percent: number };
+}
+
+export interface TtsVoice {
+  id: string;
+  label: string;
+}
+
+export const DEFAULT_TTS: TtsSettings = {
+  provider: "sapi",
+  sapi: { voice: null, rate: 0 },
+  openai: { base_url: "https://api.openai.com/v1", model: "tts-1", voice: "alloy", speed: 1 },
+  azure: { region: "eastasia", voice: "zh-CN-XiaoxiaoNeural", rate_percent: 0 },
+};
+
+export function mergeTtsSettings(saved?: Partial<TtsSettings> | null): TtsSettings {
+  return {
+    provider: saved?.provider ?? DEFAULT_TTS.provider,
+    sapi: { ...DEFAULT_TTS.sapi, ...saved?.sapi },
+    openai: { ...DEFAULT_TTS.openai, ...saved?.openai },
+    azure: { ...DEFAULT_TTS.azure, ...saved?.azure },
+  };
 }
 
 export const DEFAULT_DSP: DspSettings = {
@@ -75,4 +106,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   dsp: DEFAULT_DSP,
   scenes: [],
   active_scene: null,
+  tts: DEFAULT_TTS,
 };

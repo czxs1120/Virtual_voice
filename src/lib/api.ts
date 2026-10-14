@@ -5,6 +5,9 @@ import type {
   DspSettings,
   DriverActionResult,
   TransferLevels,
+  TtsProvider,
+  TtsSettings,
+  TtsVoice,
   DriverStatus,
   Recording,
 } from "../types";
@@ -56,6 +59,16 @@ export const api = {
   getTransferLevels: () => invoke<TransferLevels>("get_transfer_levels"),
 
   stopTransfer: () => invoke("stop_transfer"),
+
+  ttsSynthesize: (text: string, settings: TtsSettings) =>
+    invoke<string>("tts_synthesize", { text, settings }),
+
+  ttsListVoices: (settings: TtsSettings) => invoke<TtsVoice[]>("tts_list_voices", { settings }),
+
+  ttsSetApiKey: (provider: TtsProvider, key: string | null) =>
+    invoke("tts_set_api_key", { provider, key }),
+
+  ttsHasApiKey: (provider: TtsProvider) => invoke<boolean>("tts_has_api_key", { provider }),
 
   isTransferRunning: () => invoke<boolean>("is_transfer_running"),
 

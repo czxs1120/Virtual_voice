@@ -24,8 +24,11 @@ dirs = "5"
 cpal = "0.15"
 chrono = "0.4"
 zip = "2"
+ureq = { version = "2", features = ["json"] }
 
 # Global hotkeys rely on platform backends that pull GTK on Linux; this app
-# targets Windows, so keep the plugin Windows-only.
+# targets Windows, so keep the plugin Windows-only. TTS API keys live in the
+# Windows Credential Manager via keyring.
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
 tauri-plugin-global-shortcut = "=2.3.2"

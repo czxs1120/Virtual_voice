@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { api } from "./lib/api";
-import { audioBufferToWavDataUrl, decodeToWavDataUrl } from "./lib/wav";
+import { audioBufferToWavDataUrl, base64ToArrayBuffer, decodeToWavDataUrl } from "./lib/wav";
 import { WaveformEditor } from "./components/WaveformEditor";
 import { useStatusMessage } from "./hooks/useStatusMessage";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
@@ -11,12 +11,14 @@ import { findHotkeyConflict, hotkeyLabel, normalizeRecording } from "./lib/hotke
 import { HotkeyInput } from "./components/HotkeyInput";
 import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
-import { SettingsModal } from "./components/SettingsModal";
+import { SettingsModal, type SettingsTab } from "./components/SettingsModal";
+import { TtsPanel } from "./components/TtsPanel";
 import { TransferDspPanel } from "./components/TransferDspPanel";
 import { ScenePanel } from "./components/ScenePanel";
 import {
   DEFAULT_CONFIG,
   DEFAULT_DSP,
+  mergeTtsSettings,
   type AppConfig,
   type DspSettings,
   type Scene,
@@ -30,7 +32,7 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"storage" | "audio">("storage");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("storage");
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [newRecordingName, setNewRecordingName] = useState("");
   const [newHotkey, setNewHotkey] = useState<string | null>(null);
@@ -329,6 +331,7 @@ function App() {
           ...saved,
           dsp: { ...DEFAULT_DSP, ...saved.dsp },
           scenes: saved.scenes ?? [],
+          tts: mergeTtsSettings(saved.tts),
         };
         setConfig(merged);
         configRef.current = merged;
@@ -682,10 +685,7 @@ function App() {
       const name = path.split("\\").pop()?.split("/").pop() || "导入的音频";
       showStatus("正在导入音频...");
       const b64 = await api.readFileBase64(path);
-      const binary = atob(b64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const { dataUrl, durationMs } = await decodeToWavDataUrl(bytes.buffer);
+      const { dataUrl, durationMs } = await decodeToWavDataUrl(base64ToArrayBuffer(b64));
       const id = Date.now();
       const recording: Recording = {
         id,
@@ -704,6 +704,24 @@ function App() {
       console.error("Failed to import audio:", e);
       showStatus("导入失败: " + (e as Error).message);
     }
+  };
+
+  const saveTtsRecording = async (name: string, audioUrl: string) => {
+    const { dataUrl, durationMs } = await decodeToWavDataUrl(base64ToArrayBuffer(audioUrl));
+    const id = Date.now();
+    const recording: Recording = {
+      id,
+      name,
+      key_binding: null,
+      hotkey: null,
+      group: "语音合成",
+      path: "",
+      duration_ms: durationMs,
+    };
+    await api.saveRecording(recording, configRef.current.recordings_dir || null);
+    await api.saveAudio(id, dataUrl, configRef.current.recordings_dir || null);
+    await loadRecordings();
+    showStatus(`已保存「${name}」到“语音合成”分组`);
   };
 
   const saveConfigToBackend = async () => {
@@ -923,6 +941,15 @@ function App() {
               </button>
               <TransferDspPanel settings={config.dsp} onChange={changeDsp} active={isTransferring} />
             </section>
+
+            <TtsPanel
+              settings={config.tts}
+              onSave={saveTtsRecording}
+              onOpenSettings={() => {
+                setSettingsTab("tts");
+                setShowSettings(true);
+              }}
+            />
 
             <ScenePanel
               scenes={config.scenes}
