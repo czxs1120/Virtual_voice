@@ -24,8 +24,12 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 ## Features
 
 - **Recording Management** - Record, import, play, and delete audio clips
-- **Keyboard Shortcuts** - Play recordings quickly using Ctrl+1~9 (global hotkeys work even when unfocused)
-- **Real-time Voice Transfer** - Forward microphone audio to virtual audio devices in real-time
+- **Keyboard Shortcuts** - Bind F1–F12 or Ctrl/Alt/Shift combos per clip (global, work when unfocused; conflicts are rebound automatically)
+- **Groups** - Collapsible, searchable recording groups
+- **Waveform Trim** - Waveform preview, drag-to-trim, one-click silence removal
+- **Real-time Voice Transfer** - Forward microphone audio to virtual audio devices, with gain, noise gate, limiter, and level meters
+- **Scene Presets** - Save device + audio setting combinations and switch in one click
+- **System Tray** - Close hides to tray; tray menu can stop playback / toggle transfer
 - **Virtual Microphone Support** - Integrated VB-Audio Virtual Cable driver installation/uninstallation
 - **Mini Player Mode** - Collapsible compact floating player
 - **Audio Device Management** - Flexible input/output device selection
@@ -125,14 +129,25 @@ After building, the installer is located in `src-tauri/target/release/bundle/nsi
 
 ### Keyboard Shortcuts
 
-- In the recordings list, bind Ctrl+1~9 to recordings
-- Press Ctrl+number to quickly play the assigned recording
+- Click a clip's hotkey box and press the desired combination (F1–F12 alone, letters/digits need Ctrl/Alt/Shift)
+- Esc cancels capture; Backspace/Delete clears the binding
+- Legacy Ctrl+1~9 bindings are migrated automatically
 
 ### Real-time Voice Transfer
 
 1. Select an output device (VB-Audio Virtual Cable)
 2. Click **Start Transfer**
 3. Other applications (e.g., Discord, Teams) can now select VB-Audio as their input device
+4. Adjust gain, enable the noise gate (removes keyboard noise / hiss) and limiter (prevents clipping); changes apply live
+
+### Scene Presets
+
+Once devices, monitoring, volume, and transfer settings are tuned, save them under a name in **Scene Presets** and click it to switch later.
+
+### Driver Notes
+
+VB-CABLE is donationware from VB-Audio; check its license before redistributing it with a product. Any other virtual audio device
+(VoiceMeeter, Virtual Audio Cable, etc.) can be selected as the output instead. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
@@ -147,7 +162,9 @@ virtual_voice/
 ├── src-tauri/              # Tauri backend source
 │   ├── src/
 │   │   ├── main.rs        # Rust main entry
-│   │   ├── lib.rs         # Library file
+│   │   ├── lib.rs         # Recording, playback, transfer, config
+│   │   ├── dsp.rs         # Transfer gain / noise gate / limiter
+│   │   ├── tray.rs        # System tray
 │   │   └── driver.rs      # Driver installation logic
 │   ├── Cargo.toml         # Rust dependency configuration
 │   ├── tauri.conf.json    # Tauri configuration
