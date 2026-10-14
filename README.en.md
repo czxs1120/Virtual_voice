@@ -28,6 +28,7 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 - **Groups** - Collapsible, searchable recording groups
 - **Waveform Trim** - Waveform preview, drag-to-trim, one-click silence removal
 - **Real-time Voice Transfer** - Forward microphone audio to virtual audio devices, with gain, noise gate, limiter, and level meters
+- **Text-to-Speech** - Generate clips from text using a provider you configure (Windows voices / OpenAI-compatible / Azure); no official model is provided
 - **Scene Presets** - Save device + audio setting combinations and switch in one click
 - **System Tray** - Close hides to tray; tray menu can stop playback / toggle transfer
 - **Virtual Microphone Support** - Integrated VB-Audio Virtual Cable driver installation/uninstallation
@@ -140,6 +141,17 @@ After building, the installer is located in `src-tauri/target/release/bundle/nsi
 3. Other applications (e.g., Discord, Teams) can now select VB-Audio as their input device
 4. Adjust gain, enable the noise gate (removes keyboard noise / hiss) and limiter (prevents clipping); changes apply live
 
+### Text-to-Speech
+
+1. Go to **Settings** → **语音合成 (TTS)** and pick a provider:
+   - **Windows voices**: free and offline, nothing to configure
+   - **OpenAI-compatible**: base URL, model, voice, and your own API key (self-hosted servers usually need no key)
+   - **Azure Speech**: region, voice, and your own subscription key
+2. Click **Test** to verify the setup
+3. Type text in the TTS panel, preview it or save it as a clip, then bind a hotkey like any other recording
+
+> This is a non-profit project and ships no hosted model or keys. API keys are stored in the Windows Credential Manager, and requests go directly from your machine to the provider you configured.
+
 ### Scene Presets
 
 Once devices, monitoring, volume, and transfer settings are tuned, save them under a name in **Scene Presets** and click it to switch later.
@@ -165,6 +177,8 @@ virtual_voice/
 │   │   ├── lib.rs         # Recording, playback, transfer, config
 │   │   ├── dsp.rs         # Transfer gain / noise gate / limiter
 │   │   ├── tray.rs        # System tray
+│   │   ├── tts.rs         # Text-to-speech providers
+│   │   ├── secrets.rs     # API key storage (Windows Credential Manager)
 │   │   └── driver.rs      # Driver installation logic
 │   ├── Cargo.toml         # Rust dependency configuration
 │   ├── tauri.conf.json    # Tauri configuration
