@@ -1170,6 +1170,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_config_loads_with_defaults() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"recordings_dir":null,"enable_monitoring":false,"tts_voice":"x"}"#)
+                .unwrap();
+        assert!(!cfg.enable_monitoring);
+        assert_eq!(cfg.playback_volume, 1.0);
+        assert!(cfg.scenes.is_empty());
+        assert!(cfg.dsp.limiter_enabled);
+    }
+
+    #[test]
+    fn scenes_round_trip() {
+        let mut cfg = AppConfig::default();
+        cfg.scenes.push(Scene {
+            id: "s1".into(),
+            name: "会议".into(),
+            input_device: Some("Mic".into()),
+            output_device: Some("CABLE Input".into()),
+            enable_monitoring: false,
+            playback_volume: 0.5,
+            dsp: dsp::DspSettings { gain_db: 6.0, gate_enabled: true, ..Default::default() },
+        });
+        cfg.active_scene = Some("s1".into());
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(back.scenes.len(), 1);
+        assert_eq!(back.scenes[0].output_device.as_deref(), Some("CABLE Input"));
+        assert_eq!(back.scenes[0].dsp.gain_db, 6.0);
+        assert!(back.scenes[0].dsp.gate_enabled);
+        assert_eq!(back.active_scene.as_deref(), Some("s1"));
+    }
+
+    #[test]
     fn base64_round_trip() {
         for data in [&b""[..], b"a", b"ab", b"abc", b"hello world \x00\xff"] {
             assert_eq!(base64_decode(&base64_encode(data)).unwrap(), data);

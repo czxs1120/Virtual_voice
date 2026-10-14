@@ -13,11 +13,13 @@ import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
 import { SettingsModal } from "./components/SettingsModal";
 import { TransferDspPanel } from "./components/TransferDspPanel";
+import { ScenePanel } from "./components/ScenePanel";
 import {
   DEFAULT_CONFIG,
   DEFAULT_DSP,
   type AppConfig,
   type DspSettings,
+  type Scene,
   type AudioDevice,
   type DriverStatus,
   type Recording,
@@ -593,6 +595,71 @@ function App() {
     updateConfig({ playback_volume: volume });
   };
 
+  const saveScene = (name: string, overwriteId?: string) => {
+    const scene: Scene = {
+      id: overwriteId ?? `scene-${Date.now()}`,
+      name,
+      input_device: selectedInputDevice || null,
+      output_device: selectedOutputDevice || null,
+      enable_monitoring: configRef.current.enable_monitoring,
+      playback_volume: playbackVolumeRef.current,
+      dsp: configRef.current.dsp,
+    };
+    const others = configRef.current.scenes.filter((s) => s.id !== scene.id);
+    updateConfig({ scenes: [...others, scene], active_scene: scene.id });
+    showStatus(overwriteId ? `场景「${name}」已更新` : `场景「${name}」已保存`);
+  };
+
+  const deleteScene = (id: string) => {
+    const { scenes, active_scene } = configRef.current;
+    updateConfig({
+      scenes: scenes.filter((s) => s.id !== id),
+      active_scene: active_scene === id ? null : active_scene,
+    });
+  };
+
+  const applyScene = async (scene: Scene) => {
+    const missing: string[] = [];
+    let output = selectedOutputDevice;
+    let input = selectedInputDevice;
+    if (scene.output_device) {
+      if (audioDevices.some((d) => d.name === scene.output_device)) output = scene.output_device;
+      else missing.push(scene.output_device);
+    }
+    if (scene.input_device) {
+      if (inputDevices.some((d) => d.name === scene.input_device)) input = scene.input_device;
+      else missing.push(scene.input_device);
+    }
+    setSelectedOutputDevice(output);
+    setSelectedInputDevice(input);
+    setPlaybackVolume(scene.playback_volume);
+    updateConfig({
+      output_device: output || null,
+      input_device: input || null,
+      enable_monitoring: scene.enable_monitoring,
+      playback_volume: scene.playback_volume,
+      dsp: { ...DEFAULT_DSP, ...scene.dsp },
+      active_scene: scene.id,
+    });
+
+    if (isTransferring) {
+      try {
+        await api.stopTransfer();
+        await api.startTransfer(output || null, input || null, configRef.current.dsp);
+      } catch (e) {
+        setIsTransferring(false);
+        showStatus("切换场景时重启中转失败: " + (e as Error).message, 6000);
+        return;
+      }
+    }
+    showStatus(
+      missing.length
+        ? `已切换到「${scene.name}」，但找不到设备: ${missing.join("、")}`
+        : `已切换到场景「${scene.name}」`,
+      missing.length ? 6000 : 3000,
+    );
+  };
+
   useTrayEvents({
     onStopPlayback: stopPlayback,
     onToggleTransfer: toggleTransfer,
@@ -856,6 +923,14 @@ function App() {
               </button>
               <TransferDspPanel settings={config.dsp} onChange={changeDsp} active={isTransferring} />
             </section>
+
+            <ScenePanel
+              scenes={config.scenes}
+              activeScene={config.active_scene}
+              onApply={applyScene}
+              onSaveCurrent={saveScene}
+              onDelete={deleteScene}
+            />
           </div>
         </div>
       </main>
