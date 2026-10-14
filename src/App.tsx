@@ -5,6 +5,7 @@ import { api } from "./lib/api";
 import { decodeToWavDataUrl } from "./lib/wav";
 import { useStatusMessage } from "./hooks/useStatusMessage";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
+import { useTrayEvents } from "./hooks/useTrayEvents";
 import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
 import { SettingsModal } from "./components/SettingsModal";
@@ -500,6 +501,11 @@ function App() {
       }
     }
   };
+
+  useTrayEvents({
+    onStopPlayback: stopPlayback,
+    onToggleTransfer: toggleTransfer,
+  });
 
   const importAudio = async () => {
     try {

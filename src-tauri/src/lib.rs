@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 mod driver;
+mod tray;
 
 // ---------------------------------------------------------------------------
 // cpal::Stream is !Send on Windows due to a conservative PhantomData marker.
@@ -605,12 +606,16 @@ fn play_audio_to_device(
 
 #[tauri::command]
 fn stop_audio() -> Result<(), String> {
+    stop_playback_backend();
+    Ok(())
+}
+
+pub(crate) fn stop_playback_backend() {
     if let Ok(mut active) = active_playback().lock() {
         if let Some(cur) = active.take() {
             cur.stop_flag.store(true, Ordering::SeqCst);
         }
     }
-    Ok(())
 }
 
 /// Read an audio file chosen by the user for import.
@@ -918,13 +923,19 @@ fn push_resampled_mono(
 
 #[tauri::command]
 fn stop_transfer() -> Result<(), String> {
+    stop_transfer_backend();
+    Ok(())
+}
+
+pub(crate) fn stop_transfer_backend() {
     if !TRANSFER_RUNNING.load(Ordering::SeqCst) {
-        return Ok(());
+        return;
     }
-    *transfer_handles().lock().unwrap() = None;
+    if let Ok(mut handles) = transfer_handles().lock() {
+        *handles = None;
+    }
     TRANSFER_RUNNING.store(false, Ordering::SeqCst);
     log::info!("Audio transfer stopped");
-    Ok(())
 }
 
 #[tauri::command]
@@ -1064,6 +1075,11 @@ pub fn run() {
     }
 
     builder
+        .setup(|app| {
+            tray::setup(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(tray::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             get_recordings,
             save_recording,
