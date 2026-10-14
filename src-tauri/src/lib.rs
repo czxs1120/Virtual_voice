@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 mod driver;
+mod dsp;
 mod tray;
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,10 @@ pub struct AppConfig {
     pub output_device: Option<String>,
     /// Persisted audio input device name (microphone).
     pub input_device: Option<String>,
+    pub playback_volume: f32,
+    pub dsp: dsp::DspSettings,
+    pub scenes: Vec<Scene>,
+    pub active_scene: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -58,8 +63,25 @@ impl Default for AppConfig {
             enable_monitoring: true,
             output_device: None,
             input_device: None,
+            playback_volume: 1.0,
+            dsp: dsp::DspSettings::default(),
+            scenes: Vec::new(),
+            active_scene: None,
         }
     }
+}
+
+/// A named preset of devices and audio settings, e.g. "客服" or "会议".
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Scene {
+    pub id: String,
+    pub name: String,
+    pub input_device: Option<String>,
+    pub output_device: Option<String>,
+    pub enable_monitoring: bool,
+    pub playback_volume: f32,
+    pub dsp: dsp::DspSettings,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -675,7 +697,11 @@ fn linear_resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
 fn start_transfer(
     output_device: Option<String>,
     input_device: Option<String>,
+    dsp: Option<dsp::DspSettings>,
 ) -> Result<(), String> {
+    if let Some(settings) = &dsp {
+        dsp::apply_settings(settings);
+    }
     write_log(&format!(
         "start_transfer called with output_device: {:?}, input_device: {:?}",
         output_device, input_device
@@ -719,13 +745,16 @@ fn start_transfer(
     let out_run = running.clone();
 
     // Shared fractional resampler state between input callbacks.
-    let phase = Arc::new(Mutex::new(0.0f64));
+    let state = Arc::new(Mutex::new(InputState {
+        phase: 0.0,
+        dsp: dsp::Processor::new(in_rate),
+    }));
 
     let input_stream = match input_config.sample_format() {
         cpal::SampleFormat::F32 => {
             let cfg = input_config.clone().into();
             let tx = tx.clone();
-            let phase = Arc::clone(&phase);
+            let state = Arc::clone(&state);
             let inp_run = Arc::clone(&inp_run);
             input_dev
                 .build_input_stream(
@@ -734,7 +763,7 @@ fn start_transfer(
                         if !inp_run.load(Ordering::SeqCst) {
                             return;
                         }
-                        push_resampled_mono(data, in_channels, resample_ratio, &phase, &tx);
+                        push_resampled_mono(data, in_channels, resample_ratio, &state, &tx);
                     },
                     |err| log::error!("Input stream error: {}", err),
                     None,
@@ -744,7 +773,7 @@ fn start_transfer(
         cpal::SampleFormat::I16 => {
             let cfg = input_config.clone().into();
             let tx = tx.clone();
-            let phase = Arc::clone(&phase);
+            let state = Arc::clone(&state);
             let inp_run = Arc::clone(&inp_run);
             input_dev
                 .build_input_stream(
@@ -755,7 +784,7 @@ fn start_transfer(
                         }
                         let f: Vec<f32> =
                             data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
-                        push_resampled_mono(&f, in_channels, resample_ratio, &phase, &tx);
+                        push_resampled_mono(&f, in_channels, resample_ratio, &state, &tx);
                     },
                     |err| log::error!("Input stream error: {}", err),
                     None,
@@ -765,7 +794,7 @@ fn start_transfer(
         cpal::SampleFormat::U16 => {
             let cfg = input_config.clone().into();
             let tx = tx.clone();
-            let phase = Arc::clone(&phase);
+            let state = Arc::clone(&state);
             let inp_run = Arc::clone(&inp_run);
             input_dev
                 .build_input_stream(
@@ -778,7 +807,7 @@ fn start_transfer(
                             .iter()
                             .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0)
                             .collect();
-                        push_resampled_mono(&f, in_channels, resample_ratio, &phase, &tx);
+                        push_resampled_mono(&f, in_channels, resample_ratio, &state, &tx);
                     },
                     |err| log::error!("Input stream error: {}", err),
                     None,
@@ -886,12 +915,18 @@ fn start_transfer(
     Ok(())
 }
 
-/// Downmix interleaved frames to mono and push resampled samples toward `tx`.
+/// Input-callback state: resampler phase plus the DSP chain.
+struct InputState {
+    phase: f64,
+    dsp: dsp::Processor,
+}
+
+/// Downmix to mono, run the DSP chain, then resample and push toward `tx`.
 fn push_resampled_mono(
     interleaved: &[f32],
     in_channels: usize,
     resample_ratio: f64,
-    phase: &Mutex<f64>,
+    state: &Mutex<InputState>,
     tx: &std::sync::mpsc::SyncSender<f32>,
 ) {
     let ch = in_channels.max(1);
@@ -904,6 +939,10 @@ fn push_resampled_mono(
         return;
     }
 
+    // Only the input callback locks this, so it is uncontended.
+    let mut st = state.lock().unwrap();
+    st.dsp.process(&mut mono);
+
     // ratio = out_rate / in_rate → how many output samples per input sample.
     if (resample_ratio - 1.0).abs() < f64::EPSILON {
         for s in mono {
@@ -914,8 +953,7 @@ fn push_resampled_mono(
         return;
     }
 
-    let mut ph = phase.lock().unwrap();
-    let mut idx = *ph;
+    let mut idx = st.phase;
     while idx < mono.len() as f64 {
         let lo = idx.floor() as usize;
         let hi = (lo + 1).min(mono.len() - 1);
@@ -926,7 +964,18 @@ fn push_resampled_mono(
         }
         idx += 1.0 / resample_ratio;
     }
-    *ph = idx - mono.len() as f64;
+    st.phase = idx - mono.len() as f64;
+}
+
+#[tauri::command]
+fn set_transfer_dsp(settings: dsp::DspSettings) -> Result<(), String> {
+    dsp::apply_settings(&settings);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_transfer_levels() -> Result<dsp::Levels, String> {
+    Ok(dsp::take_levels())
 }
 
 #[tauri::command]
@@ -1106,10 +1155,61 @@ pub fn run() {
             start_transfer,
             stop_transfer,
             is_transfer_running,
+            set_transfer_dsp,
+            get_transfer_levels,
             driver::is_vbcable_installed,
             driver::install_vbcable_driver,
             driver::uninstall_vbcable_driver,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_round_trip() {
+        for data in [&b""[..], b"a", b"ab", b"abc", b"hello world \x00\xff"] {
+            assert_eq!(base64_decode(&base64_encode(data)).unwrap(), data);
+        }
+    }
+
+    #[test]
+    fn data_url_extension_detection() {
+        assert_eq!(ext_from_data_url("data:audio/wav;base64,AAAA"), ("wav", "AAAA"));
+        assert_eq!(ext_from_data_url("data:audio/mpeg;base64,BB"), ("mp3", "BB"));
+        assert_eq!(ext_from_data_url("data:audio/webm;codecs=opus;base64,CC"), ("webm", "CC"));
+        assert_eq!(ext_from_data_url("RAW"), ("webm", "RAW"));
+    }
+
+    #[test]
+    fn linear_resample_scales_length() {
+        let src: Vec<f32> = (0..480).map(|i| i as f32 / 480.0).collect();
+        let up = linear_resample(&src, 48_000, 96_000);
+        assert_eq!(up.len(), 960);
+        let down = linear_resample(&src, 48_000, 24_000);
+        assert_eq!(down.len(), 240);
+        assert!((down[120] - src[240]).abs() < 1e-3);
+    }
+
+    #[test]
+    fn transfer_path_downmixes_and_resamples() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<f32>(10_000);
+        let state = Mutex::new(InputState {
+            phase: 0.0,
+            dsp: dsp::Processor::new(48_000),
+        });
+        dsp::apply_settings(&dsp::DspSettings {
+            limiter_enabled: false,
+            ..Default::default()
+        });
+        // Stereo frames (L=0.2, R=0.4) → mono 0.3, 48k → 24k halves the count.
+        let stereo: Vec<f32> = (0..2_000).flat_map(|_| [0.2f32, 0.4f32]).collect();
+        push_resampled_mono(&stereo, 2, 0.5, &state, &tx);
+        let out: Vec<f32> = rx.try_iter().collect();
+        assert_eq!(out.len(), 1_000);
+        assert!(out.iter().all(|s| (s - 0.3).abs() < 1e-5));
+    }
 }

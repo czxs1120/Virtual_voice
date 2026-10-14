@@ -12,9 +12,12 @@ import { HotkeyInput } from "./components/HotkeyInput";
 import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
 import { SettingsModal } from "./components/SettingsModal";
+import { TransferDspPanel } from "./components/TransferDspPanel";
 import {
   DEFAULT_CONFIG,
+  DEFAULT_DSP,
   type AppConfig,
+  type DspSettings,
   type AudioDevice,
   type DriverStatus,
   type Recording,
@@ -319,8 +322,15 @@ function App() {
     const init = async () => {
       try {
         const saved = await api.getConfig();
-        setConfig({ ...DEFAULT_CONFIG, ...saved });
-        configRef.current = { ...DEFAULT_CONFIG, ...saved };
+        const merged: AppConfig = {
+          ...DEFAULT_CONFIG,
+          ...saved,
+          dsp: { ...DEFAULT_DSP, ...saved.dsp },
+          scenes: saved.scenes ?? [],
+        };
+        setConfig(merged);
+        configRef.current = merged;
+        setPlaybackVolume(merged.playback_volume ?? 1);
       } catch (e) {
         console.error("Failed to load config:", e);
       }
@@ -535,7 +545,7 @@ function App() {
       const targetDevice = selectedOutputDevice || null;
       const inputDevice = selectedInputDevice || null;
       try {
-        await api.startTransfer(targetDevice, inputDevice);
+        await api.startTransfer(targetDevice, inputDevice, configRef.current.dsp);
         setIsTransferring(true);
         showStatus("中转已开启: " + (targetDevice || "默认设备"));
       } catch (e) {
@@ -546,7 +556,7 @@ function App() {
             await api.stopTransfer();
           } catch (_) {}
           try {
-            await api.startTransfer(targetDevice, inputDevice);
+            await api.startTransfer(targetDevice, inputDevice, configRef.current.dsp);
             setIsTransferring(true);
             showStatus("中转已开启: " + (targetDevice || "默认设备"));
             return;
@@ -558,6 +568,29 @@ function App() {
         showStatus("开启中转失败: " + msg);
       }
     }
+  };
+
+  const persistConfigTimer = useRef<number | undefined>(undefined);
+  const updateConfig = useCallback((patch: Partial<AppConfig>) => {
+    const next = { ...configRef.current, ...patch };
+    configRef.current = next;
+    setConfig(next);
+    window.clearTimeout(persistConfigTimer.current);
+    persistConfigTimer.current = window.setTimeout(() => {
+      api.saveConfig(configRef.current).catch((e) => console.error("Failed to save config:", e));
+    }, 400);
+  }, []);
+
+  const changeDsp = (dsp: DspSettings) => {
+    updateConfig({ dsp, active_scene: null });
+    if (isTransferring) {
+      api.setTransferDsp(dsp).catch((e) => console.error("Failed to update DSP:", e));
+    }
+  };
+
+  const changePlaybackVolume = (volume: number) => {
+    setPlaybackVolume(volume);
+    updateConfig({ playback_volume: volume });
   };
 
   useTrayEvents({
@@ -779,7 +812,7 @@ function App() {
                   max="1"
                   step="0.01"
                   value={playbackVolume}
-                  onChange={(e) => setPlaybackVolume(parseFloat(e.target.value))}
+                  onChange={(e) => changePlaybackVolume(parseFloat(e.target.value))}
                   className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
@@ -821,6 +854,7 @@ function App() {
               >
                 {isTransferring ? "关闭中转" : "开启中转"}
               </button>
+              <TransferDspPanel settings={config.dsp} onChange={changeDsp} active={isTransferring} />
             </section>
           </div>
         </div>
