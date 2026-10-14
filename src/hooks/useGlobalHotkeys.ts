@@ -36,7 +36,11 @@ export function useGlobalHotkeys(
         for (let k = 1; k <= 9; k++) {
           if (cancelled) return;
           const accelerator = `CommandOrControl+${k}`;
-          await register(accelerator, () => triggerKey(k));
+          await register(accelerator, (event) => {
+            // Fires on both press and release; playback toggles, so only
+            // react to the press or one keystroke would start then stop.
+            if (event.state === "Pressed") triggerKey(k);
+          });
         }
       } catch (e) {
         // Global shortcuts may fail without accessibility permissions; local
