@@ -1,31 +1,49 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import { acceleratorFromEvent } from "../lib/hotkeys";
 import type { Recording } from "../types";
 
 /**
- * Registers Ctrl/Cmd+1..9 as OS-level shortcuts so playback works while
- * the window is unfocused (e.g. Discord / Teams in the foreground).
- * Also keeps an in-window keydown fallback.
+ * Registers each recording's hotkey as an OS-level shortcut so playback works
+ * while the window is unfocused (e.g. Discord / Teams in the foreground).
+ * An in-window keydown handler remains as a fallback.
  */
 export function useGlobalHotkeys(
-  recordingsRef: React.MutableRefObject<Recording[]>,
+  recordings: Recording[],
   playById: (id: number) => void,
+  enabled = true,
 ) {
   const playByIdRef = useRef(playById);
   playByIdRef.current = playById;
+  const recordingsRef = useRef(recordings);
+  recordingsRef.current = recordings;
+
+  const signature = useMemo(
+    () =>
+      recordings
+        .filter((r) => r.hotkey)
+        .map((r) => r.hotkey)
+        .sort()
+        .join("|"),
+    [recordings],
+  );
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
 
-    const triggerKey = (key: number) => {
-      const rec = recordingsRef.current.find((r) => r.key_binding === key);
+    const trigger = (accelerator: string) => {
+      const rec = recordingsRef.current.find((r) => r.hotkey === accelerator);
       if (rec) playByIdRef.current(rec.id);
     };
 
     const localHandler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key >= "1" && e.key <= "9") {
+      const target = e.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      const accel = acceleratorFromEvent(e);
+      if (accel && recordingsRef.current.some((r) => r.hotkey === accel)) {
         e.preventDefault();
-        triggerKey(parseInt(e.key, 10));
+        trigger(accel);
       }
     };
     window.addEventListener("keydown", localHandler);
@@ -33,14 +51,20 @@ export function useGlobalHotkeys(
     (async () => {
       try {
         await unregisterAll();
-        for (let k = 1; k <= 9; k++) {
+        const hotkeys = signature ? signature.split("|") : [];
+        for (const accel of hotkeys) {
           if (cancelled) return;
-          const accelerator = `CommandOrControl+${k}`;
-          await register(accelerator, () => triggerKey(k));
+          try {
+            await register(accel, (event) => {
+              // Fires on both press and release; playback toggles, so only
+              // react to the press or one keystroke would start then stop.
+              if (event.state === "Pressed") trigger(accel);
+            });
+          } catch (e) {
+            console.warn(`Global shortcut ${accel} unavailable:`, e);
+          }
         }
       } catch (e) {
-        // Global shortcuts may fail without accessibility permissions; local
-        // keydown handler above remains as a fallback.
         console.warn("Global shortcut registration failed:", e);
       }
     })();
@@ -50,5 +74,5 @@ export function useGlobalHotkeys(
       window.removeEventListener("keydown", localHandler);
       unregisterAll().catch(() => {});
     };
-  }, [recordingsRef]);
+  }, [signature, enabled]);
 }

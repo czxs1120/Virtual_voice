@@ -25,9 +25,17 @@ unsafe impl Sync for SendStream {}
 pub struct Recording {
     pub id: u64,
     pub name: String,
+    #[serde(default)]
     pub key_binding: Option<u32>,
+    #[serde(default)]
     pub path: String,
+    #[serde(default)]
     pub duration_ms: u32,
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Tauri accelerator string, e.g. "CommandOrControl+1" or "F5".
+    #[serde(default)]
+    pub hotkey: Option<String>,
 }
 
 /// Application settings persisted to disk.

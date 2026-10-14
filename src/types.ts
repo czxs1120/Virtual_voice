@@ -1,9 +1,13 @@
 export interface Recording {
   id: number;
   name: string;
+  /** Legacy Ctrl+1..9 binding; superseded by `hotkey`. */
   key_binding: number | null;
   path: string;
   duration_ms: number;
+  group?: string | null;
+  /** Tauri accelerator string, e.g. "CommandOrControl+1" or "F5". */
+  hotkey?: string | null;
 }
 
 export interface AppConfig {

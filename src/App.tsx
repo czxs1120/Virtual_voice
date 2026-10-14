@@ -6,6 +6,8 @@ import { decodeToWavDataUrl } from "./lib/wav";
 import { useStatusMessage } from "./hooks/useStatusMessage";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useTrayEvents } from "./hooks/useTrayEvents";
+import { findHotkeyConflict, hotkeyLabel, normalizeRecording } from "./lib/hotkeys";
+import { HotkeyInput } from "./components/HotkeyInput";
 import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
 import { SettingsModal } from "./components/SettingsModal";
@@ -25,7 +27,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<"storage" | "audio">("storage");
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [newRecordingName, setNewRecordingName] = useState("");
-  const [selectedKey, setSelectedKey] = useState<number | null>(null);
+  const [newHotkey, setNewHotkey] = useState<string | null>(null);
   const { statusMessage, showStatus } = useStatusMessage();
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
   const [selectedOutputDevice, setSelectedOutputDevice] = useState("");
@@ -90,7 +92,7 @@ function App() {
   const loadRecordings = useCallback(async () => {
     try {
       const list = await api.getRecordings(configRef.current.recordings_dir || null);
-      setRecordings(list);
+      setRecordings(list.map(normalizeRecording).sort((a, b) => a.id - b.id));
     } catch (e) {
       console.error("Failed to load recordings:", e);
     }
@@ -246,7 +248,7 @@ function App() {
 
   playbackVolumeRef.current = playbackVolume;
 
-  useGlobalHotkeys(recordingsRef, handlePlayClick);
+  useGlobalHotkeys(recordings, handlePlayClick);
 
   const refreshAudioDevices = useCallback(async () => {
     try {
@@ -376,15 +378,18 @@ function App() {
           const recording: Recording = {
             id,
             name,
-            key_binding: selectedKey,
+            key_binding: null,
+            hotkey: null,
+            group: null,
             path: "",
             duration_ms,
           };
           try {
             await api.saveRecording(recording, configRef.current.recordings_dir || null);
             await api.saveAudio(id, audioData, configRef.current.recordings_dir || null);
+            if (newHotkey) await assignHotkey(recording, newHotkey);
             setNewRecordingName("");
-            setSelectedKey(null);
+            setNewHotkey(null);
             await loadRecordings();
             showStatus("录音已保存!");
           } catch (e) {
@@ -433,17 +438,54 @@ function App() {
     }
   };
 
-  const bindKey = async (recordingId: number, key: number) => {
+  const persist = (rec: Recording) =>
+    api.saveRecording(rec, configRef.current.recordings_dir || null);
+
+  /**
+   * Bind `hotkey` to `recording`. A hotkey maps to exactly one recording, so
+   * any other recording holding it is unbound. Returns the displaced one.
+   */
+  const assignHotkey = async (
+    recording: Recording,
+    hotkey: string | null,
+  ): Promise<Recording | undefined> => {
+    const conflict = hotkey
+      ? findHotkeyConflict(recordingsRef.current, hotkey, recording.id)
+      : undefined;
+    if (conflict) {
+      await persist({ ...conflict, hotkey: null, key_binding: null });
+    }
+    // Clear the legacy field so normalizeRecording doesn't resurrect it.
+    await persist({ ...recording, hotkey, key_binding: null });
+    return conflict;
+  };
+
+  const setHotkey = async (recordingId: number, hotkey: string | null) => {
     const recording = recordingsRef.current.find((r) => r.id === recordingId);
     if (!recording) return;
-    const updated = { ...recording, key_binding: key };
     try {
-      await api.saveRecording(updated, configRef.current.recordings_dir || null);
+      const conflict = await assignHotkey(recording, hotkey);
       await loadRecordings();
-      showStatus(`快捷键 Ctrl+${key} 已绑定`);
+      if (!hotkey) showStatus("热键已清除");
+      else if (conflict)
+        showStatus(`${hotkeyLabel(hotkey)} 已从「${conflict.name}」改绑到「${recording.name}」`, 4000);
+      else showStatus(`热键 ${hotkeyLabel(hotkey)} 已绑定`);
     } catch (e) {
-      console.error("Failed to bind key:", e);
+      console.error("Failed to bind hotkey:", e);
       showStatus("绑定失败");
+    }
+  };
+
+  const setGroup = async (recordingId: number, group: string | null) => {
+    const recording = recordingsRef.current.find((r) => r.id === recordingId);
+    if (!recording || (recording.group ?? null) === group) return;
+    try {
+      await persist({ ...recording, group });
+      await loadRecordings();
+      showStatus(group ? `已移入分组「${group}」` : "已移出分组");
+    } catch (e) {
+      console.error("Failed to set group:", e);
+      showStatus("分组失败");
     }
   };
 
@@ -533,6 +575,8 @@ function App() {
         id,
         name: name.replace(/\.[^.]+$/, ""),
         key_binding: null,
+        hotkey: null,
+        group: null,
         path: "",
         duration_ms: durationMs,
       };
@@ -647,7 +691,9 @@ function App() {
           onRenameTextChange={setRenameText}
           onCommitRename={(id) => renameRecording(id, renameText)}
           onCancelRename={() => setRenamingId(null)}
-          onBindKey={bindKey}
+          onSetHotkey={setHotkey}
+          onSetGroup={setGroup}
+          onEdit={() => showStatus("波形编辑开发中")}
           onDelete={deleteRecording}
         />
 
@@ -722,21 +768,17 @@ function App() {
                 />
               </div>
               <div className="mt-4">
-                <label className="text-sm text-slate-400 mb-2 block">快捷键绑定：</label>
-                <select
-                  className="bg-slate-700 rounded px-3 py-2 border border-slate-600"
-                  value={selectedKey || ""}
-                  onChange={(e) =>
-                    setSelectedKey(e.target.value ? parseInt(e.target.value, 10) : null)
-                  }
-                >
-                  <option value="">不绑定</option>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => (
-                    <option key={k} value={k}>
-                      Ctrl+{k}
-                    </option>
-                  ))}
-                </select>
+                <label className="text-sm text-slate-400 mb-2 block">
+                  新录音热键（可选，支持 F1–F12 或 Ctrl/Alt/Shift 组合）：
+                </label>
+                <div className="flex items-center gap-2">
+                  <HotkeyInput value={newHotkey} onChange={setNewHotkey} />
+                  {newHotkey && findHotkeyConflict(recordings, newHotkey, -1) && (
+                    <span className="text-xs text-amber-400">
+                      已被「{findHotkeyConflict(recordings, newHotkey, -1)!.name}」占用，保存后将改绑
+                    </span>
+                  )}
+                </div>
               </div>
             </section>
 
@@ -814,7 +856,7 @@ function App() {
       )}
 
       <footer className="bg-slate-800 border-t border-slate-700 px-6 py-3 flex items-center justify-between text-sm text-slate-500">
-        <span>按 Ctrl+数字键 快速播放录音（支持全局热键）</span>
+        <span>按绑定的热键快速播放录音（窗口在后台也有效）</span>
         <span className="flex items-center gap-2">
           <span
             className={`inline-flex items-center gap-1 ${
