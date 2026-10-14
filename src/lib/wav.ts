@@ -52,6 +52,10 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+export function audioBufferToWavDataUrl(buffer: AudioBuffer): string {
+  return `data:audio/wav;base64,${arrayBufferToBase64(encodeWav(buffer))}`;
+}
+
 /** Decode arbitrary audio bytes and re-encode as WAV for reliable storage. */
 export async function decodeToWavDataUrl(
   arrayBuffer: ArrayBuffer,

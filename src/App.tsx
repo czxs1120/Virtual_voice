@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { api } from "./lib/api";
-import { decodeToWavDataUrl } from "./lib/wav";
+import { audioBufferToWavDataUrl, decodeToWavDataUrl } from "./lib/wav";
+import { WaveformEditor } from "./components/WaveformEditor";
 import { useStatusMessage } from "./hooks/useStatusMessage";
 import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useTrayEvents } from "./hooks/useTrayEvents";
@@ -41,6 +42,7 @@ function App() {
   const playbackVolumeRef = useRef(1.0);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameText, setRenameText] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const compactTransitionRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -125,6 +127,30 @@ function App() {
     api.stopAudio().catch(() => {});
   }, []);
 
+  const loadBuffer = useCallback(async (id: number): Promise<AudioBuffer> => {
+    const cached = bufferCacheRef.current.get(id);
+    if (cached) return cached;
+    const dataUrl = await api.getAudio(id, configRef.current.recordings_dir || null);
+    const base64 = dataUrl.split(",", 2)[1] || "";
+    const binary = atob(base64);
+    const arr = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+    const buffer = await ensureAudioCtx().decodeAudioData(arr.buffer);
+    bufferCacheRef.current.set(id, buffer);
+    return buffer;
+  }, []);
+
+  const saveTrimmed = async (id: number, trimmed: AudioBuffer) => {
+    const recording = recordingsRef.current.find((r) => r.id === id);
+    if (!recording) return;
+    if (activeIdRef.current === id) stopPlayback();
+    await api.saveAudio(id, audioBufferToWavDataUrl(trimmed), configRef.current.recordings_dir || null);
+    await persist({ ...recording, duration_ms: Math.round(trimmed.duration * 1000) });
+    bufferCacheRef.current.set(id, trimmed);
+    await loadRecordings();
+    showStatus(`已裁剪为 ${trimmed.duration.toFixed(2)} 秒`);
+  };
+
   const doPlay = async (id: number) => {
     const my = ++playTokenRef.current;
     try {
@@ -132,18 +158,8 @@ function App() {
       if (ctx.state === "suspended") await ctx.resume();
       if (playTokenRef.current !== my || activeIdRef.current !== id) return;
 
-      let buffer = bufferCacheRef.current.get(id);
-      if (!buffer) {
-        const dataUrl = await api.getAudio(id, configRef.current.recordings_dir || null);
-        if (playTokenRef.current !== my || activeIdRef.current !== id) return;
-        const base64 = dataUrl.split(",", 2)[1] || "";
-        const binary = atob(base64);
-        const arr = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-        if (playTokenRef.current !== my || activeIdRef.current !== id) return;
-        buffer = await ctx.decodeAudioData(arr.buffer);
-        bufferCacheRef.current.set(id, buffer);
-      }
+      const buffer = await loadBuffer(id);
+      if (playTokenRef.current !== my || activeIdRef.current !== id) return;
 
       const monitor = configRef.current.enable_monitoring;
       const gain = ctx.createGain();
@@ -693,7 +709,7 @@ function App() {
           onCancelRename={() => setRenamingId(null)}
           onSetHotkey={setHotkey}
           onSetGroup={setGroup}
-          onEdit={() => showStatus("波形编辑开发中")}
+          onEdit={setEditingId}
           onDelete={deleteRecording}
         />
 
@@ -852,6 +868,15 @@ function App() {
             }
           }}
           onSave={saveConfigToBackend}
+        />
+      )}
+
+      {editingId !== null && recordings.find((r) => r.id === editingId) && (
+        <WaveformEditor
+          recording={recordings.find((r) => r.id === editingId)!}
+          loadBuffer={loadBuffer}
+          onSave={(trimmed) => saveTrimmed(editingId, trimmed)}
+          onClose={() => setEditingId(null)}
         />
       )}
 
