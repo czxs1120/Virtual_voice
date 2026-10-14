@@ -6,7 +6,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 mod driver;
 mod dsp;
+mod secrets;
 mod tray;
+mod tts;
 
 // ---------------------------------------------------------------------------
 // cpal::Stream is !Send on Windows due to a conservative PhantomData marker.
@@ -54,6 +56,8 @@ pub struct AppConfig {
     pub dsp: dsp::DspSettings,
     pub scenes: Vec<Scene>,
     pub active_scene: Option<String>,
+    /// Provider settings only; API keys are kept in `secrets`, never here.
+    pub tts: tts::TtsSettings,
 }
 
 impl Default for AppConfig {
@@ -67,6 +71,7 @@ impl Default for AppConfig {
             dsp: dsp::DspSettings::default(),
             scenes: Vec::new(),
             active_scene: None,
+            tts: tts::TtsSettings::default(),
         }
     }
 }
@@ -1157,6 +1162,10 @@ pub fn run() {
             is_transfer_running,
             set_transfer_dsp,
             get_transfer_levels,
+            tts::tts_synthesize,
+            tts::tts_list_voices,
+            tts::tts_set_api_key,
+            tts::tts_has_api_key,
             driver::is_vbcable_installed,
             driver::install_vbcable_driver,
             driver::uninstall_vbcable_driver,

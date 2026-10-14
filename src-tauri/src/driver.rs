@@ -20,7 +20,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Apply CREATE_NO_WINDOW on Windows; no-op elsewhere.
-fn hide_console(cmd: &mut Command) {
+pub(crate) fn hide_console(cmd: &mut Command) {
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
