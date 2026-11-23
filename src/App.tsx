@@ -915,6 +915,7 @@ function App() {
           config={config}
           settingsTab={settingsTab}
           driverStatus={driverStatus}
+          statusMessage={statusMessage}
           inputDevices={inputDevices}
           audioDevices={audioDevices}
           selectedInputDevice={selectedInputDevice}

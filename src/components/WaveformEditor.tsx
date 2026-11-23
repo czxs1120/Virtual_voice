@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { VoiceDialog } from "./VoiceDialog";
 import type { Recording } from "../types";
 import { computePeaks, detectSilenceBounds, sliceBuffer } from "../lib/audioEdit";
 
@@ -56,9 +57,11 @@ export function WaveformEditor({ recording, loadBuffer, onSave, onClose }: Props
     [stopPreview],
   );
 
+  const peaks = useMemo(() => buffer ? computePeaks(buffer, WIDTH) : null, [buffer]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !buffer) return;
+    if (!canvas || !buffer?.duration || !peaks) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
@@ -67,28 +70,29 @@ export function WaveformEditor({ recording, loadBuffer, onSave, onClose }: Props
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-    const peaks = computePeaks(buffer, WIDTH);
     const mid = HEIGHT / 2;
     const sx = (start / buffer.duration) * WIDTH;
     const ex = (end / buffer.duration) * WIDTH;
 
+    ctx.fillStyle = "#304764";
+    ctx.fillRect(sx, 0, ex - sx, HEIGHT);
+    ctx.fillStyle = "rgba(175, 186, 203, 0.15)";
+    for (let x = 0; x < WIDTH; x += WIDTH / 8) ctx.fillRect(x, 0, 1, HEIGHT);
+    ctx.fillRect(0, mid, WIDTH, 1);
+
     for (let x = 0; x < WIDTH; x++) {
       const min = peaks[x * 2];
       const max = peaks[x * 2 + 1];
-      ctx.fillStyle = x >= sx && x <= ex ? "#22d3ee" : "#475569";
+      ctx.fillStyle = x >= sx && x <= ex ? "#77bdff" : "#56647a";
       const y1 = mid - max * mid;
       const y2 = mid - min * mid;
       ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
     }
 
-    ctx.fillStyle = "rgba(15,23,42,0.55)";
-    ctx.fillRect(0, 0, sx, HEIGHT);
-    ctx.fillRect(ex, 0, WIDTH - ex, HEIGHT);
-
-    ctx.fillStyle = "#f59e0b";
-    ctx.fillRect(sx - 1, 0, 2, HEIGHT);
-    ctx.fillRect(ex - 1, 0, 2, HEIGHT);
-  }, [buffer, start, end]);
+    ctx.fillStyle = "#c3e2ff";
+    ctx.fillRect(Math.max(0, sx - 1), 0, 2, HEIGHT);
+    ctx.fillRect(Math.min(WIDTH - 2, ex - 1), 0, 2, HEIGHT);
+  }, [buffer, peaks, start, end]);
 
   const timeAt = (clientX: number) => {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -97,7 +101,7 @@ export function WaveformEditor({ recording, loadBuffer, onSave, onClose }: Props
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!buffer) return;
+    if (!buffer || saving) return;
     const t = timeAt(e.clientX);
     dragRef.current = Math.abs(t - start) <= Math.abs(t - end) ? "start" : "end";
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -106,8 +110,9 @@ export function WaveformEditor({ recording, loadBuffer, onSave, onClose }: Props
 
   const applyDrag = (t: number) => {
     if (!buffer) return;
-    if (dragRef.current === "start") setStart(Math.min(t, end - MIN_SELECTION));
-    else if (dragRef.current === "end") setEnd(Math.max(t, start + MIN_SELECTION));
+    const minimum = Math.min(MIN_SELECTION, buffer.duration);
+    if (dragRef.current === "start") setStart(Math.max(0, Math.min(t, end - minimum)));
+    else if (dragRef.current === "end") setEnd(Math.min(buffer.duration, Math.max(t, start + minimum)));
   };
 
   const preview = async () => {
@@ -132,7 +137,7 @@ export function WaveformEditor({ recording, loadBuffer, onSave, onClose }: Props
     if (!buffer) return;
     const b = detectSilenceBounds(buffer);
     setStart(b.start);
-    setEnd(Math.max(b.end, b.start + MIN_SELECTION));
+    setEnd(Math.min(buffer.duration, Math.max(b.end, b.start + MIN_SELECTION)));
   };
 
   const save = async () => {
@@ -152,81 +157,48 @@ export function WaveformEditor({ recording, loadBuffer, onSave, onClose }: Props
   const unchanged = !!buffer && start <= 0.001 && end >= buffer.duration - 0.001;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
-      <div
-        className="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-2xl"
-        style={{ width: WIDTH + 48 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">波形 / 裁剪 —「{recording.name}」</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white px-2">
-            ✕
+    <VoiceDialog title="波形裁剪" subtitle={recording.name} wide onClose={onClose} closeDisabled={saving}
+      footer={
+        <div className="trim-actions">
+          <button type="button" className="voice-button" disabled={!buffer || saving} onClick={autoTrim}>
+            去除首尾静音
           </button>
-        </div>
-
-        {error && <p className="text-sm text-red-400 mb-3">加载或保存失败：{error}</p>}
-        {!buffer && !error && <p className="text-sm text-slate-400 mb-3">正在解码音频…</p>}
-
-        <canvas
-          ref={canvasRef}
-          data-testid="waveform"
-          style={{ width: WIDTH, height: HEIGHT, touchAction: "none" }}
-          className="rounded-lg bg-slate-900 cursor-ew-resize"
-          onPointerDown={onPointerDown}
-          onPointerMove={(e) => dragRef.current && applyDrag(timeAt(e.clientX))}
-          onPointerUp={() => (dragRef.current = null)}
-        />
-
-        {buffer && (
-          <div className="flex justify-between text-xs text-slate-400 mt-2">
-            <span>起点 {start.toFixed(2)}s</span>
-            <span className="text-cyan-300">
-              选区 {(end - start).toFixed(2)}s / 原长 {buffer.duration.toFixed(2)}s
-            </span>
-            <span>终点 {end.toFixed(2)}s</span>
-          </div>
-        )}
-
-        <p className="text-xs text-slate-500 mt-2">
-          在波形上拖动橙色边界调整选区；保存后只保留高亮部分。
-        </p>
-
-        <div className="flex gap-2 mt-4">
-          <button
-            disabled={!buffer}
-            onClick={autoTrim}
-            className="px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-sm"
-          >
-            自动去除首尾静音
-          </button>
-          <button
-            disabled={!buffer}
-            onClick={() => buffer && (setStart(0), setEnd(buffer.duration))}
-            className="px-4 py-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-sm"
-          >
+          <button type="button" className="voice-button" disabled={!buffer || saving || unchanged}
+            onClick={() => { setStart(0); if (buffer) setEnd(buffer.duration); }}>
             重置
           </button>
-          <button
-            disabled={!buffer}
-            onClick={preview}
-            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-sm"
-          >
+          <button type="button" className="voice-button" disabled={!buffer || saving} onClick={preview}>
             {previewing ? "停止试听" : "试听选区"}
           </button>
-          <div className="flex-1" />
-          <button
-            disabled={!buffer || saving || unchanged}
-            onClick={save}
-            className="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-sm font-medium"
-          >
+          <button type="button" className="voice-button voice-primary trim-save"
+            disabled={!buffer || saving || unchanged} onClick={save}>
             {saving ? "保存中…" : "保存裁剪"}
           </button>
         </div>
+      }
+    >
+      {error && <p className="trim-error" role="alert">加载或保存失败：{error}</p>}
+      {!buffer && !error && <p className="settings-hint" role="status">正在解码音频…</p>}
+      <div className="trim-waveform">
+        <canvas
+          ref={canvasRef}
+          data-testid="waveform"
+          aria-label="录音波形"
+          onPointerDown={onPointerDown}
+          onPointerMove={(event) => dragRef.current && applyDrag(timeAt(event.clientX))}
+          onLostPointerCapture={() => (dragRef.current = null)}
+        />
       </div>
-    </div>
+      {buffer && (
+        <>
+          <dl className="trim-timing">
+            <div><dt>起点</dt><dd>{start.toFixed(2)} 秒</dd></div>
+            <div className="trim-selection"><dt>选区 / 原长</dt><dd>{(end - start).toFixed(2)} / {buffer.duration.toFixed(2)} 秒</dd></div>
+            <div><dt>终点</dt><dd>{end.toFixed(2)} 秒</dd></div>
+          </dl>
+          <p className="settings-hint">拖动波形两侧的边界调整选区。保存后只保留高亮部分。</p>
+        </>
+      )}
+    </VoiceDialog>
   );
 }
