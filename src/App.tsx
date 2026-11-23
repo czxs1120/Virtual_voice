@@ -9,6 +9,7 @@ import { useGlobalHotkeys } from "./hooks/useGlobalHotkeys";
 import { useTrayEvents } from "./hooks/useTrayEvents";
 import { findHotkeyConflict, hotkeyLabel, normalizeRecording } from "./lib/hotkeys";
 import { HotkeyInput } from "./components/HotkeyInput";
+import { computePeaks } from "./lib/audioEdit";
 import { CompactPlayer } from "./components/CompactPlayer";
 import { RecordingList } from "./components/RecordingList";
 import { SettingsModal, type SettingsTab } from "./components/SettingsModal";
@@ -44,6 +45,7 @@ function App() {
   const [inputDeviceIdMap, setInputDeviceIdMap] = useState<Record<string, string>>({});
   const [driverStatus, setDriverStatus] = useState<DriverStatus>("Unknown");
   const [isCompactMode, setIsCompactMode] = useState(false);
+  const [playbackPreview, setPlaybackPreview] = useState<{ id: number; peaks: Float32Array; duration: number } | null>(null);
   const [currentlyPlayingId, setCurrentlyPlayingId] = useState<number | null>(null);
   const [playbackVolume, setPlaybackVolume] = useState(1.0);
   const playbackVolumeRef = useRef(1.0);
@@ -52,7 +54,7 @@ function App() {
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const compactTransitionRef = useRef(false);
-  const compactWidthRef = useRef(600);
+  const compactWidthRef = useRef(760);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const configRef = useRef<AppConfig>(config);
@@ -154,6 +156,9 @@ function App() {
     await api.saveAudio(id, audioBufferToWavDataUrl(trimmed), configRef.current.recordings_dir || null);
     await persist({ ...recording, duration_ms: Math.round(trimmed.duration * 1000) });
     bufferCacheRef.current.set(id, trimmed);
+    setPlaybackPreview((preview) => preview?.id === id
+      ? { id, peaks: computePeaks(trimmed, 64), duration: trimmed.duration }
+      : preview);
     await loadRecordings();
     showStatus(`已裁剪为 ${trimmed.duration.toFixed(2)} 秒`);
   };
@@ -167,6 +172,8 @@ function App() {
 
       const buffer = await loadBuffer(id);
       if (playTokenRef.current !== my || activeIdRef.current !== id) return;
+
+      setPlaybackPreview({ id, peaks: computePeaks(buffer, 64), duration: buffer.duration });
 
       const monitor = configRef.current.enable_monitoring;
       const gain = ctx.createGain();
@@ -756,10 +763,16 @@ function App() {
     }
   };
 
+  const previewId = currentlyPlayingId ?? playbackPreview?.id;
+  const playbackRecording = recordings.find((recording) => recording.id === previewId) ?? recordings[0];
+  const preview = playbackPreview?.id === playbackRecording?.id ? playbackPreview : null;
+  const playbackDuration = preview?.duration ?? (playbackRecording?.duration_ms ?? 0) / 1000;
+
   if (isCompactMode) {
     return (
       <CompactPlayer
         recordings={recordings}
+        currentlyPlayingId={currentlyPlayingId}
         onPlay={handlePlayClick}
         onStop={stopPlayback}
         onExpand={toggleCompactMode}
@@ -769,196 +782,131 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-gray-100 flex flex-col">
-      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-cyan-400">Virtual Voice</h1>
-          <p className="text-sm text-slate-400">虚拟语音客户端</p>
+    <div className="voice-app" data-ui>
+      <header className="app-bar">
+        <div className="app-brand">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <rect x="9" y="2.5" width="6" height="12" rx="3" />
+            <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8" />
+          </svg>
+          <h1>Virtual Voice</h1>
         </div>
-        <div className="flex items-center gap-4">
-          {statusMessage && (
-            <span className="text-sm text-cyan-300 animate-pulse">{statusMessage}</span>
-          )}
-          <button
-            onClick={toggleCompactMode}
-            disabled={compactTransitionRef.current}
-            className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 transition-colors"
-            title="收起为迷你播放器"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        <div className="app-tools">
+          <span className="app-status" role="status">{statusMessage}</span>
+          <button className="voice-button icon-button" title="设置" aria-label="设置" onClick={() => setShowSettings(true)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+              <path d="m10 3-.7 2.4-2 .9-2.3-.7-2 3.4 1.7 1.8v2.4L3 15l2 3.4 2.3-.7 2 .9.7 2.4h4l.7-2.4 2-.9 2.3.7 2-3.4-1.7-1.8v-2.4L21 9l-2-3.4-2.3.7-2-.9L14 3z" /><circle cx="12" cy="12" r="3.2" />
             </svg>
           </button>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
+          <button className="voice-button icon-button" title="收起为迷你播放器" aria-label="收起为迷你播放器" onClick={toggleCompactMode} disabled={compactTransitionRef.current}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg>
           </button>
         </div>
       </header>
 
-      <main className="flex-1 flex">
-        <RecordingList
-          recordings={recordings}
-          currentlyPlayingId={currentlyPlayingId}
-          renamingId={renamingId}
-          renameText={renameText}
-          onPlay={handlePlayClick}
-          onStartRename={(id, name) => {
-            setRenamingId(id);
-            setRenameText(name);
-          }}
-          onRenameTextChange={setRenameText}
-          onCommitRename={(id) => renameRecording(id, renameText)}
-          onCancelRename={() => setRenamingId(null)}
-          onSetHotkey={setHotkey}
-          onSetGroup={setGroup}
-          onEdit={setEditingId}
-          onDelete={deleteRecording}
-        />
-
-        <div className="flex-1 p-6 overflow-y-auto">
-          <div className="max-w-3xl mx-auto space-y-6">
-            <section className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span
-                  className={`w-3 h-3 rounded-full ${
-                    isRecording ? "bg-red-500 animate-pulse" : "bg-slate-500"
-                  }`}
-                />
-                录音控制
-              </h3>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                    isRecording
-                      ? "bg-red-600 hover:bg-red-700"
-                      : "bg-cyan-600 hover:bg-cyan-700"
-                  }`}
-                >
-                  {isRecording ? "停止录音" : "开始录音"}
-                </button>
-                <input
-                  type="text"
-                  placeholder="录音名称（选填）"
-                  value={newRecordingName}
-                  onChange={(e) => setNewRecordingName(e.target.value)}
-                  className="flex-1 px-4 py-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-cyan-500 focus:outline-none"
-                />
-                <button
-                  onClick={() => stopPlayback()}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-medium transition-colors flex items-center gap-1"
-                  title="停止播放"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                    <rect x="6" y="6" width="12" height="12" rx="1" />
-                  </svg>
-                  停止
-                </button>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button
-                  onClick={importAudio}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                    />
-                  </svg>
-                  导入音频
-                </button>
-              </div>
-              <div className="mt-4">
-                <label className="text-sm text-slate-400 mb-2 block">
-                  播放音量：{Math.round(playbackVolume * 100)}%
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={playbackVolume}
-                  onChange={(e) => changePlaybackVolume(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
-              </div>
-              <div className="mt-4">
-                <label className="text-sm text-slate-400 mb-2 block">
-                  新录音热键（可选，支持 F1–F12 或 Ctrl/Alt/Shift 组合）：
-                </label>
-                <div className="flex items-center gap-2">
-                  <HotkeyInput value={newHotkey} onChange={setNewHotkey} />
-                  {newHotkey && findHotkeyConflict(recordings, newHotkey, -1) && (
-                    <span className="text-xs text-amber-400">
-                      已被「{findHotkeyConflict(recordings, newHotkey, -1)!.name}」占用，保存后将改绑
-                    </span>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span
-                  className={`w-3 h-3 rounded-full ${
-                    isTransferring ? "bg-blue-500 animate-pulse" : "bg-slate-500"
-                  }`}
-                />
-                实时语音中转
-              </h3>
-              <p className="text-slate-400 text-sm mb-4">
-                开启后，您的麦克风声音将被实时转发到选中的音频输出设备（如 VB-Audio Virtual
-                Cable），供其他应用接收。
-              </p>
-              <button
-                onClick={toggleTransfer}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                  isTransferring
-                    ? "bg-blue-600 hover:bg-blue-700"
-                    : "bg-slate-600 hover:bg-slate-700"
-                }`}
-              >
-                {isTransferring ? "关闭中转" : "开启中转"}
+      <main className="voice-workspace">
+        <div className="voice-library">
+          <RecordingList
+            recordings={recordings}
+            currentlyPlayingId={currentlyPlayingId}
+            renamingId={renamingId}
+            renameText={renameText}
+            onPlay={handlePlayClick}
+            onStartRename={(id, name) => {
+              setRenamingId(id);
+              setRenameText(name);
+            }}
+            onRenameTextChange={setRenameText}
+            onCommitRename={(id) => renameRecording(id, renameText)}
+            onCancelRename={() => setRenamingId(null)}
+            onSetHotkey={setHotkey}
+            onSetGroup={setGroup}
+            onEdit={setEditingId}
+            onDelete={deleteRecording}
+          />
+          <section className="playback-strip" aria-label="播放控制">
+            <div className="playback-controls">
+              <button className="voice-button icon-button" title={currentlyPlayingId !== null ? "停止当前播放" : "播放录音"} disabled={!playbackRecording}
+                onClick={() => playbackRecording && handlePlayClick(playbackRecording.id)}>
+                <span aria-hidden="true">{currentlyPlayingId !== null ? "■" : "▶"}</span>
               </button>
-              <TransferDspPanel settings={config.dsp} onChange={changeDsp} active={isTransferring} />
-            </section>
+              <button className="voice-button icon-button" title="停止播放" onClick={stopPlayback} disabled={currentlyPlayingId === null}>■</button>
+            </div>
+            <div className="playback-clip">
+              <div className="playback-label"><span>{playbackRecording?.name ?? "暂无录音"}</span>
+                {playbackRecording && <time>{playbackDuration > 0 ? playbackDuration.toFixed(1) + " 秒" : "—"}</time>}
+              </div>
+              {preview ? (
+                <svg className="playback-waveform" viewBox="0 0 128 28" preserveAspectRatio="none" aria-hidden="true">
+                  {Array.from({ length: 64 }, (_, i) => {
+                    const low = Math.min(preview.peaks[i * 2], -0.025);
+                    const high = Math.max(preview.peaks[i * 2 + 1], 0.025);
+                    return <line key={i} x1={i * 2 + 1} x2={i * 2 + 1} y1={14 - high * 13} y2={14 - low * 13} />;
+                  })}
+                </svg>
+              ) : <div className="waveform-idle" aria-hidden="true" />}
+            </div>
+            <label className="playback-volume">
+              <span>播放音量 <output>{Math.round(playbackVolume * 100)}%</output></span>
+              <input type="range" min="0" max="1" step="0.01" value={playbackVolume}
+                onChange={(e) => changePlaybackVolume(Number(e.target.value))} />
+            </label>
+          </section>
 
-            <TtsPanel
-              settings={config.tts}
-              onSave={saveTtsRecording}
-              onOpenSettings={() => {
-                setSettingsTab("tts");
-                setShowSettings(true);
-              }}
-            />
-
-            <ScenePanel
-              scenes={config.scenes}
-              activeScene={config.active_scene}
-              onApply={applyScene}
-              onSaveCurrent={saveScene}
-              onDelete={deleteScene}
-            />
+          <div className="record-options">
+            <input type="text" aria-label="录音名称" value={newRecordingName}
+              onChange={(e) => setNewRecordingName(e.target.value)} placeholder="录音名称（选填）" />
+            <HotkeyInput compact value={newHotkey} onChange={setNewHotkey} />
+            {newHotkey && findHotkeyConflict(recordings, newHotkey, -1) && (
+              <span className="record-conflict">保存后将改绑「{findHotkeyConflict(recordings, newHotkey, -1)?.name}」的热键</span>
+            )}
           </div>
+          <div className="record-actions">
+            <button onClick={isRecording ? stopRecording : startRecording} className={`voice-button voice-primary ${isRecording ? "recording-active" : ""}`}>
+              <span className="record-dot" aria-hidden="true" />{isRecording ? "停止录音" : "开始录音"}
+            </button>
+            <button onClick={importAudio} className="voice-button">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 16v4h16v-4M12 16V4m-5 5 5-5 5 5" /></svg>
+              导入音频
+            </button>
+          </div>
+        </div>
+
+        <div className="voice-utilities">
+          <section className="voice-panel" aria-labelledby="transfer-title">
+            <div className="panel-heading">
+              <h2 id="transfer-title">实时语音中转</h2>
+              <button type="button" role="switch" aria-checked={isTransferring} aria-label="实时语音中转"
+                onClick={toggleTransfer} className="transfer-switch">
+                <span className="switch-track" aria-hidden="true" />{isTransferring ? "已开启" : "已关闭"}
+              </button>
+            </div>
+            <div className="transfer-devices">
+              <label><span>输入设备</span><select value={selectedInputDevice} disabled={isTransferring}
+                onChange={(e) => {
+                  setSelectedInputDevice(e.target.value);
+                  updateConfig({ input_device: e.target.value || null, active_scene: null });
+                }}>
+                {inputDevices.length === 0 && <option value="">系统默认</option>}
+                {inputDevices.map((device, index) => <option key={index} value={device.name}>{device.name}</option>)}
+              </select></label>
+              <label><span>输出设备</span><select value={selectedOutputDevice} disabled={isTransferring}
+                onChange={(e) => {
+                  setSelectedOutputDevice(e.target.value);
+                  updateConfig({ output_device: e.target.value || null, active_scene: null });
+                }}>
+                {audioDevices.length === 0 && <option value="">系统默认</option>}
+                {audioDevices.map((device, index) => <option key={index} value={device.name}>{device.name}</option>)}
+              </select></label>
+            </div>
+            <TransferDspPanel settings={config.dsp} onChange={changeDsp} active={isTransferring} />
+          </section>
+          <ScenePanel scenes={config.scenes} activeScene={config.active_scene} onApply={applyScene}
+            onSaveCurrent={saveScene} onDelete={deleteScene} />
+          <TtsPanel settings={config.tts} onSave={saveTtsRecording} onOpenSettings={() => {
+            setSettingsTab("tts");
+            setShowSettings(true);
+          }} />
         </div>
       </main>
 
@@ -1016,8 +964,8 @@ function App() {
         />
       )}
 
-      <footer className="bg-slate-800 border-t border-slate-700 px-6 py-3 flex items-center justify-between text-sm text-slate-500">
-        <span>按绑定的热键快速播放录音（窗口在后台也有效）</span>
+      <footer className="app-footer">
+        <span>全局热键可在窗口后台使用</span>
         <span className="flex items-center gap-2">
           <span
             className={`inline-flex items-center gap-1 ${

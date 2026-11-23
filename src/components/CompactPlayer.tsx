@@ -1,91 +1,44 @@
+import { useMemo } from "react";
 import type { Recording } from "../types";
 import { hotkeyLabel, hotkeySortKey } from "../lib/hotkeys";
 
 interface Props {
   recordings: Recording[];
+  currentlyPlayingId: number | null;
   onPlay: (id: number) => void;
   onStop: () => void;
   onExpand: () => void;
   expanding: boolean;
 }
 
-export function CompactPlayer({
-  recordings,
-  onPlay,
-  onStop,
-  onExpand,
-  expanding,
-}: Props) {
-  const bound = recordings
-    .filter((r) => r.hotkey)
-    .sort((a, b) => hotkeySortKey(a.hotkey!).localeCompare(hotkeySortKey(b.hotkey!)));
+export function CompactPlayer({ recordings, currentlyPlayingId, onPlay, onStop, onExpand, expanding }: Props) {
+  const bound = useMemo(() => recordings
+    .filter((recording) => recording.hotkey)
+    .sort((a, b) => hotkeySortKey(a.hotkey!).localeCompare(hotkeySortKey(b.hotkey!))), [recordings]);
 
   return (
-    <div
-      className="bg-slate-900 text-gray-100 select-none"
-      style={{ height: "100vh", display: "flex", flexDirection: "column" }}
-    >
-      <div
-        className="flex items-center gap-1 px-2 py-1 bg-slate-800 overflow-hidden"
-        style={{ flex: 1 }}
-      >
-        <div
-          className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-thin"
-          style={{ scrollbarWidth: "thin", minWidth: 0 }}
-        >
-          {bound.map((rec) => (
-            <button
-              key={rec.id}
-              onClick={() => onPlay(rec.id)}
-              className="flex min-w-[104px] max-w-56 shrink-0 items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
-              title={`${rec.name}（${hotkeyLabel(rec.hotkey)}）`}
-            >
-              <span className="inline-flex items-center justify-center px-1 h-5 rounded bg-gradient-to-br from-cyan-500 to-cyan-700 text-white font-bold text-[10px] shadow shadow-cyan-500/20 shrink-0">
-                {hotkeyLabel(rec.hotkey).replace("Ctrl+", "^")}
-              </span>
-              <span
-                className="min-w-0 truncate text-[11px] text-slate-200"
-              >
-                {rec.name}
-              </span>
-            </button>
-          ))}
-          {bound.length === 0 && (
-            <span className="text-xs text-slate-500 whitespace-nowrap">
-              暂无可播放的录音
-            </span>
-          )}
-        </div>
-        <button
-          onClick={onStop}
-          className="p-1 rounded bg-red-700 hover:bg-red-600 disabled:opacity-50 transition-colors shrink-0 ml-0.5"
-          title="停止播放"
-        >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-            <rect x="6" y="6" width="12" height="12" rx="1" />
-          </svg>
-        </button>
-        <button
-          onClick={onExpand}
-          disabled={expanding}
-          className="p-1 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 transition-colors shrink-0 ml-0.5"
-          title="展开完整窗口"
-        >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M5 15l7-7 7 7"
-            />
-          </svg>
-        </button>
+    <div className="compact-player" data-ui>
+      <div className="compact-clips" aria-label="已绑定热键的录音">
+        {bound.map((recording) => (
+          <button key={recording.id} type="button" className="compact-clip"
+            aria-pressed={currentlyPlayingId === recording.id}
+            title={recording.name + "（" + hotkeyLabel(recording.hotkey) + "）"}
+            onClick={() => onPlay(recording.id)}>
+            <span className="min-w-0 truncate text-sm">{recording.name}</span>
+            <kbd>{hotkeyLabel(recording.hotkey)}</kbd>
+          </button>
+        ))}
+        {bound.length === 0 && <span className="px-2 text-xs text-slate-400">暂无绑定热键的录音</span>}
       </div>
+      <button type="button" onClick={onStop} className="voice-button compact-stop shrink-0" title="停止播放">
+        <span aria-hidden="true">■</span>停止
+      </button>
+      <button type="button" onClick={onExpand} disabled={expanding}
+        className="voice-button icon-button shrink-0" title="展开完整窗口" aria-label="展开完整窗口">
+        <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" />
+        </svg>
+      </button>
     </div>
   );
 }
