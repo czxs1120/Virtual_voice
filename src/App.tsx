@@ -994,7 +994,7 @@ function App() {
                 : "..."}
           </span>
           <span>|</span>
-          <span>Virtual Voice v1.9.0</span>
+          <span>Virtual Voice v2.0.0</span>
         </span>
       </footer>
     </div>
