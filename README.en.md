@@ -40,23 +40,15 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 
 ## Interface Preview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Virtual Voice                          Virtual Voice       │
-├──────────────┬──────────────────────────────────────────────┤
-│              │                                              │
-│  Recordings  │              Recording Controls              │
-│              │                                              │
-│  [Clip 1]    │  [Start Recording]  [Stop]  [Import Audio]   │
-│  [Clip 2]    │                                              │
-│  [Clip 3]    │              Real-time Voice Transfer        │
-│              │                                              │
-│              │  [Start Transfer]                            │
-│              │                                              │
-├──────────────┴──────────────────────────────────────────────┤
-│  Ctrl+Number Keys Quick Play  │ Virtual Mic: Ready  │ v2.0.0│
-└─────────────────────────────────────────────────────────────┘
-```
+These screenshots show Virtual Voice v2.0.0 running on Windows.
+
+**Main window**
+
+![Virtual Voice main window showing recordings, live audio transfer, scene presets, and text-to-speech](docs/screenshots/main-window.jpg)
+
+**Compact player**
+
+![Virtual Voice compact player showing recording names and keyboard shortcuts](docs/screenshots/compact-player.jpg)
 
 ---
 
@@ -203,3 +195,4 @@ This project is licensed under the [MIT License](LICENSE).
 - [Trae CN](https://trae.ai) - AI programming assistant
 - [Reasonix](https://www.reasonix.top) - AI assistant based on Deepseek-V4
 - [ZCode](https://zcode.top) - AI programming assistant based on GLM5.2
+- [ChatGPT](https://chatgpt.com/) - Assisted with interface design and development
