@@ -167,8 +167,11 @@ pub fn check_driver_installed() -> DriverStatus {
 
 /// Check if the VB-CABLE driver is installed (Tauri command version).
 #[tauri::command]
-pub fn is_vbcable_installed() -> DriverStatus {
-    check_driver_installed()
+pub async fn is_vbcable_installed() -> DriverStatus {
+    // pnputil and the registry fallback wait on child processes.
+    tauri::async_runtime::spawn_blocking(check_driver_installed)
+        .await
+        .unwrap_or(DriverStatus::Unknown)
 }
 
 /// Install the VB-CABLE driver from bundled resources.

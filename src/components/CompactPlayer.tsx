@@ -37,16 +37,14 @@ export function CompactPlayer({
             <button
               key={rec.id}
               onClick={() => onPlay(rec.id)}
-              className="flex items-center justify-center gap-1 px-1 py-1 bg-slate-700 hover:bg-slate-600 rounded shrink-0 transition-colors"
-              style={{ width: 104 }}
+              className="flex min-w-[104px] max-w-56 shrink-0 items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
               title={`${rec.name}（${hotkeyLabel(rec.hotkey)}）`}
             >
               <span className="inline-flex items-center justify-center px-1 h-5 rounded bg-gradient-to-br from-cyan-500 to-cyan-700 text-white font-bold text-[10px] shadow shadow-cyan-500/20 shrink-0">
                 {hotkeyLabel(rec.hotkey).replace("Ctrl+", "^")}
               </span>
               <span
-                className="text-[11px] truncate text-slate-200"
-                style={{ maxWidth: 50 }}
+                className="min-w-0 truncate text-[11px] text-slate-200"
               >
                 {rec.name}
               </span>

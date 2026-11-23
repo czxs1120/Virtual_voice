@@ -4,7 +4,15 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import App from "../src/App";
 import { api } from "../src/lib/api";
 import { DEFAULT_CONFIG, DEFAULT_DSP, type AppConfig } from "../src/types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
+vi.mock("@tauri-apps/api/window", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tauri-apps/api/window")>(),
+  getCurrentWindow: vi.fn(() => ({
+    setSize: vi.fn(), setMinSize: vi.fn(), setSizeConstraints: vi.fn(),
+    setAlwaysOnTop: vi.fn(), setResizable: vi.fn(), center: vi.fn(),
+  })),
+}));
 vi.mock("../src/lib/api", () => ({
   api: {
     getConfig: vi.fn(), saveConfig: vi.fn(), getRecordings: vi.fn(),
@@ -54,6 +62,23 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+test("compact player allows width changes and clears its height limit on expand", async () => {
+  const mockWindow = getCurrentWindow();
+  vi.mocked(getCurrentWindow).mockReturnValue(mockWindow);
+  render(<App />);
+  await waitFor(() => expect(api.isTransferRunning).toHaveBeenCalled());
+  fireEvent.click(screen.getByTitle("收起为迷你播放器"));
+  fireEvent.click(await screen.findByTitle("展开完整窗口"));
+  await screen.findByTitle("收起为迷你播放器");
+  expect(mockWindow.setResizable).not.toHaveBeenCalledWith(false);
+  expect(mockWindow.setSizeConstraints).toHaveBeenNthCalledWith(1, {
+    minWidth: 320, minHeight: 70, maxHeight: 70,
+  });
+  expect(mockWindow.setSizeConstraints).toHaveBeenNthCalledWith(2, {
+    minWidth: 400, minHeight: 100,
+  });
+});
 
 test.each([false, true])("scene settings survive device changes and refresh (transfer running: %s)", async (running) => {
   vi.mocked(api.isTransferRunning).mockResolvedValue(running);

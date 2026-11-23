@@ -52,6 +52,7 @@ function App() {
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const compactTransitionRef = useRef(false);
+  const compactWidthRef = useRef(600);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const configRef = useRef<AppConfig>(config);
@@ -80,15 +81,14 @@ function App() {
     const nextCompact = !isCompactMode;
     try {
       if (nextCompact) {
-        await appWindow.setSize(new LogicalSize(600, 70));
-        await appWindow.setMinSize(new LogicalSize(600, 70));
+        await appWindow.setSizeConstraints({ minWidth: 320, minHeight: 70, maxHeight: 70 });
+        await appWindow.setSize(new LogicalSize(compactWidthRef.current, 70));
         await appWindow.setAlwaysOnTop(true);
-        await appWindow.setResizable(false);
       } else {
+        compactWidthRef.current = Math.max(320, window.innerWidth);
+        await appWindow.setSizeConstraints({ minWidth: 400, minHeight: 100 });
         await appWindow.setSize(new LogicalSize(1000, 700));
-        await appWindow.setMinSize(new LogicalSize(400, 100));
         await appWindow.setAlwaysOnTop(false);
-        await appWindow.setResizable(true);
         await appWindow.center();
       }
       setIsCompactMode(nextCompact);
@@ -1045,7 +1045,7 @@ function App() {
                 : "..."}
           </span>
           <span>|</span>
-          <span>Virtual Voice v1.8.0</span>
+          <span>Virtual Voice v1.9.0</span>
         </span>
       </footer>
     </div>
