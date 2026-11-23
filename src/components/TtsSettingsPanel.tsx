@@ -22,15 +22,14 @@ const OPENAI_PRESETS = [
   { label: "本地服务 (localhost:8880)", base_url: "http://localhost:8880/v1", model: "kokoro", voice: "" },
 ];
 
-const inputClass =
-  "w-full px-3 py-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-cyan-500 focus:outline-none text-sm";
+const inputClass = "settings-input";
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="block">
-      <span className="block text-sm font-medium mb-1">{label}</span>
+    <label className="settings-field">
+      <span className="settings-label">{label}</span>
       {children}
-      {hint && <span className="block text-xs text-slate-400 mt-1">{hint}</span>}
+      {hint && <span className="settings-hint">{hint}</span>}
     </label>
   );
 }
@@ -69,7 +68,7 @@ function ApiKeyField({ provider, optional }: { provider: TtsProvider; optional?:
             : "未设置")
       }
     >
-      <div className="flex gap-2">
+      <div className="settings-inline">
         <input
           type="password"
           autoComplete="off"
@@ -82,7 +81,7 @@ function ApiKeyField({ provider, optional }: { provider: TtsProvider; optional?:
           type="button"
           onClick={() => save(draft)}
           disabled={!draft.trim()}
-          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 rounded-lg text-sm whitespace-nowrap"
+          className="voice-button"
         >
           保存
         </button>
@@ -90,7 +89,7 @@ function ApiKeyField({ provider, optional }: { provider: TtsProvider; optional?:
           <button
             type="button"
             onClick={() => save(null)}
-            className="px-3 py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm whitespace-nowrap"
+            className="voice-button"
           >
             清除
           </button>
@@ -162,31 +161,24 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
   );
 
   return (
-    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-      <p className="text-xs text-slate-400 bg-slate-900 border border-slate-700 rounded-lg p-3 leading-relaxed">
-        本软件为非盈利项目，不提供任何官方模型或密钥。合成请求由本机直接发送到你配置的服务商，
-        费用、额度与数据隐私政策以服务商为准。
+    <div className="settings-tts">
+      <p className="settings-hint">
+        在线合成会把文本发送给所选服务商，可能产生费用。应用不提供 API Key。
       </p>
 
-      <div className="grid gap-2" role="radiogroup" aria-label="语音合成服务商">
-        {PROVIDERS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            role="radio"
-            aria-checked={provider === p.id}
-            onClick={() => onChange({ ...settings, provider: p.id })}
-            className={`text-left px-3 py-2 rounded-lg border transition-colors ${
-              provider === p.id
-                ? "border-cyan-500 bg-cyan-900/30"
-                : "border-slate-600 bg-slate-700 hover:border-slate-500"
-            }`}
-          >
-            <span className="block text-sm font-medium">{p.name}</span>
-            <span className="block text-xs text-slate-400">{p.desc}</span>
-          </button>
+      <fieldset className="settings-providers">
+        <legend>合成服务商</legend>
+        {PROVIDERS.map((option) => (
+          <label key={option.id} className="settings-provider">
+            <input type="radio" name="tts-provider" checked={provider === option.id}
+              onChange={() => onChange({ ...settings, provider: option.id })} />
+            <span>
+              <span className="settings-label">{option.name}</span>
+              <span className="settings-hint">{option.desc}</span>
+            </span>
+          </label>
         ))}
-      </div>
+      </fieldset>
 
       {provider === "sapi" && (
         <>
@@ -212,7 +204,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
               step={1}
               value={settings.sapi.rate}
               onChange={(e) => set("sapi", { rate: parseInt(e.target.value, 10) })}
-              className="w-full accent-cyan-500"
+              className="settings-range"
             />
           </Field>
         </>
@@ -228,7 +220,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
                 onClick={() =>
                   set("openai", { base_url: p.base_url, model: p.model, voice: p.voice || settings.openai.voice })
                 }
-                className="px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 border border-slate-600"
+                className="voice-button"
               >
                 {p.label}
               </button>
@@ -242,7 +234,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
               className={inputClass}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="settings-columns">
             <Field label="模型">
               <input
                 value={settings.openai.model}
@@ -270,7 +262,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
               step={0.05}
               value={settings.openai.speed}
               onChange={(e) => set("openai", { speed: parseFloat(e.target.value) })}
-              className="w-full accent-cyan-500"
+              className="settings-range"
             />
           </Field>
           <ApiKeyField provider="openai" optional />
@@ -279,7 +271,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
 
       {provider === "azure" && (
         <>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="settings-columns">
             <Field label="区域 (Region)" hint="Azure 门户中语音资源的区域">
               <input
                 value={settings.azure.region}
@@ -289,7 +281,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
               />
             </Field>
             <Field label="音色" hint={voicesError ?? undefined}>
-              <div className="flex gap-1">
+              <div className="settings-inline">
                 <input
                   list="tts-voices"
                   value={settings.azure.voice}
@@ -302,7 +294,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
                   onClick={loadVoices}
                   disabled={loadingVoices}
                   title="从 Azure 获取音色列表（需先保存 API Key）"
-                  className="px-2 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:opacity-50 text-xs whitespace-nowrap"
+                  className="voice-button"
                 >
                   {loadingVoices ? "…" : "获取"}
                 </button>
@@ -318,7 +310,7 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
               step={5}
               value={settings.azure.rate_percent}
               onChange={(e) => set("azure", { rate_percent: parseInt(e.target.value, 10) })}
-              className="w-full accent-cyan-500"
+              className="settings-range"
             />
           </Field>
           <ApiKeyField provider="azure" />
@@ -330,11 +322,11 @@ export function TtsSettingsPanel({ settings, onChange }: Props) {
           type="button"
           onClick={test}
           disabled={testing}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-sm font-medium"
+          className="voice-button"
         >
           {testing ? "合成中…" : "测试合成"}
         </button>
-        {testResult && <span className="text-xs text-slate-300 break-all">{testResult}</span>}
+        {testResult && <span className="settings-hint break-all" role="status">{testResult}</span>}
       </div>
     </div>
   );

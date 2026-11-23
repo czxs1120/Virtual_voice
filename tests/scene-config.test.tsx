@@ -63,6 +63,23 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+test("recording search filters within the selected group", async () => {
+  vi.mocked(api.getRecordings).mockResolvedValue([
+    { id: 1, name: "开始检录", group: "检录", key_binding: 1, path: "", duration_ms: 4200 },
+    { id: 2, name: "核对证件", group: null, key_binding: 2, path: "", duration_ms: 5000 },
+  ]);
+  render(<App />);
+  await screen.findByRole("button", { name: "播放 开始检录" });
+  fireEvent.click(screen.getByRole("button", { name: "未分组", exact: true }));
+  expect(screen.queryByRole("button", { name: "播放 开始检录" })).toBeNull();
+  expect(screen.getByRole("button", { name: "播放 核对证件" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索录音片段" }), { target: { value: "开始" } });
+  expect(screen.getByText("没有匹配的录音")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "全部", exact: true }));
+  expect(screen.getByRole("button", { name: "播放 开始检录" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "播放 核对证件" })).toBeNull();
+});
+
 test("compact player allows width changes and clears its height limit on expand", async () => {
   const mockWindow = getCurrentWindow();
   vi.mocked(getCurrentWindow).mockReturnValue(mockWindow);

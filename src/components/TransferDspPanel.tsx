@@ -17,7 +17,7 @@ function Meter({ label, db, marker }: { label: string; db: number; marker?: numb
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="w-8 text-slate-400">{label}</span>
-      <div className="relative flex-1 h-2 bg-slate-700 rounded overflow-hidden">
+      <div className="relative flex-1 h-2.5 meter-track overflow-hidden">
         <div className={`h-full ${color} transition-[width] duration-75`} style={{ width: `${pct(db)}%` }} />
         {marker !== undefined && (
           <div className="absolute top-0 h-full w-0.5 bg-cyan-300" style={{ left: `${pct(marker)}%` }} />
@@ -48,82 +48,83 @@ export function TransferDspPanel({ settings, onChange, active }: Props) {
     onChange({ ...settings, [key]: value });
 
   return (
-    <div className="mt-5 pt-4 border-t border-slate-700 space-y-4">
-      <h4 className="text-sm font-semibold text-slate-300">音频处理</h4>
-
-      {active && (
-        <div className="space-y-1.5">
-          <Meter
-            label="输入"
-            db={levels?.input_db ?? -100}
-            marker={settings.gate_enabled ? settings.gate_threshold_db : undefined}
-          />
-          <Meter label="输出" db={levels?.output_db ?? -100} />
-          {settings.gate_enabled && (
-            <p className="text-[11px] text-slate-500">
-              噪声门：{levels?.gate_open ? "开启（有声音）" : "关闭（静音中）"}；青色竖线为阈值
-            </p>
-          )}
-        </div>
-      )}
-
-      <label className="block text-sm">
-        <span className="text-slate-400">输入增益：{settings.gain_db > 0 ? "+" : ""}{settings.gain_db} dB</span>
-        <input
-          type="range"
-          min={-12}
-          max={18}
-          step={1}
-          value={settings.gain_db}
-          onChange={(e) => set("gain_db", Number(e.target.value))}
-          className="w-full accent-cyan-500"
+    <div className="transfer-processing">
+      <div className="space-y-1.5">
+        <Meter
+          label="输入"
+          db={(active ? levels?.input_db : undefined) ?? -100}
+          marker={settings.gate_enabled ? settings.gate_threshold_db : undefined}
         />
-      </label>
+        <Meter label="输出" db={(active ? levels?.output_db : undefined) ?? -100} />
+        {active && settings.gate_enabled && (
+          <p className="text-[11px] text-slate-500">
+            噪声门：{levels?.gate_open ? "开启（有声音）" : "关闭（静音中）"}；青色竖线为阈值
+          </p>
+        )}
+      </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Toggle
-            label="噪声门"
-            hint="低于阈值时静音，去掉键盘声和底噪"
-            on={settings.gate_enabled}
-            onToggle={() => set("gate_enabled", !settings.gate_enabled)}
-          />
-          <label className={`block text-xs mt-2 ${settings.gate_enabled ? "" : "opacity-40"}`}>
-            <span className="text-slate-400">阈值：{settings.gate_threshold_db} dB</span>
-            <input
-              type="range"
-              min={-80}
-              max={-20}
-              step={1}
-              disabled={!settings.gate_enabled}
-              value={settings.gate_threshold_db}
-              onChange={(e) => set("gate_threshold_db", Number(e.target.value))}
-              className="w-full accent-cyan-500"
-            />
-          </label>
-        </div>
-        <div>
-          <Toggle
-            label="限幅器"
-            hint="防止突然大声导致爆音"
-            on={settings.limiter_enabled}
-            onToggle={() => set("limiter_enabled", !settings.limiter_enabled)}
-          />
-          <label className={`block text-xs mt-2 ${settings.limiter_enabled ? "" : "opacity-40"}`}>
-            <span className="text-slate-400">上限：{settings.limiter_ceiling_db} dB</span>
+      <details className="dsp-details">
+        <summary>音频处理</summary>
+        <div className="dsp-controls">
+          <label className="block text-sm">
+            <span className="text-slate-400">输入增益：{settings.gain_db > 0 ? "+" : ""}{settings.gain_db} dB</span>
             <input
               type="range"
               min={-12}
-              max={0}
-              step={0.5}
-              disabled={!settings.limiter_enabled}
-              value={settings.limiter_ceiling_db}
-              onChange={(e) => set("limiter_ceiling_db", Number(e.target.value))}
+              max={18}
+              step={1}
+              value={settings.gain_db}
+              onChange={(e) => set("gain_db", Number(e.target.value))}
               className="w-full accent-cyan-500"
             />
           </label>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Toggle
+                label="噪声门"
+                hint="低于阈值时静音，去掉键盘声和底噪"
+                on={settings.gate_enabled}
+                onToggle={() => set("gate_enabled", !settings.gate_enabled)}
+              />
+              <label className={`block text-xs mt-2 ${settings.gate_enabled ? "" : "opacity-40"}`}>
+                <span className="text-slate-400">阈值：{settings.gate_threshold_db} dB</span>
+                <input
+                  type="range"
+                  min={-80}
+                  max={-20}
+                  step={1}
+                  disabled={!settings.gate_enabled}
+                  value={settings.gate_threshold_db}
+                  onChange={(e) => set("gate_threshold_db", Number(e.target.value))}
+                  className="w-full accent-cyan-500"
+                />
+              </label>
+            </div>
+            <div>
+              <Toggle
+                label="限幅器"
+                hint="防止突然大声导致爆音"
+                on={settings.limiter_enabled}
+                onToggle={() => set("limiter_enabled", !settings.limiter_enabled)}
+              />
+              <label className={`block text-xs mt-2 ${settings.limiter_enabled ? "" : "opacity-40"}`}>
+                <span className="text-slate-400">上限：{settings.limiter_ceiling_db} dB</span>
+                <input
+                  type="range"
+                  min={-12}
+                  max={0}
+                  step={0.5}
+                  disabled={!settings.limiter_enabled}
+                  value={settings.limiter_ceiling_db}
+                  onChange={(e) => set("limiter_ceiling_db", Number(e.target.value))}
+                  className="w-full accent-cyan-500"
+                />
+              </label>
+            </div>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   );
 }

@@ -21,30 +21,25 @@ export function ScenePanel({ scenes, activeScene, onApply, onSaveCurrent, onDele
   };
 
   return (
-    <section className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-      <h3 className="text-lg font-semibold mb-1">场景预设</h3>
-      <p className="text-slate-400 text-sm mb-4">
-        保存当前的输入/输出设备、监听开关、播放音量和中转处理参数，一键切换（如“开黑”“会议”“直播”）。
-      </p>
+    <section className="voice-panel">
+      <h2 className="mb-2">场景预设</h2>
 
       {scenes.length > 0 ? (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="scene-list">
           {scenes.map((scene) => {
             const active = scene.id === activeScene;
             return (
               <div
                 key={scene.id}
-                className={`group flex items-center rounded-lg border ${
-                  active ? "border-cyan-500 bg-cyan-900/40" : "border-slate-600 bg-slate-700"
-                }`}
+                className="scene-row" data-active={active}
               >
                 <button
                   onClick={() => onApply(scene)}
-                  className="px-3 py-1.5 text-sm hover:text-cyan-300"
+                  className="scene-choice"
                   title={`输入: ${scene.input_device || "默认"}\n输出: ${scene.output_device || "默认"}`}
                   aria-pressed={active}
                 >
-                  {scene.name}
+                  <span className="scene-indicator" aria-hidden="true" />{scene.name}
                 </button>
                 <button
                   onClick={() => onDelete(scene.id)}
@@ -59,24 +54,24 @@ export function ScenePanel({ scenes, activeScene, onApply, onSaveCurrent, onDele
           })}
         </div>
       ) : (
-        <p className="text-xs text-slate-500 mb-4">还没有场景，先调好设备和参数再保存。</p>
+        <p className="text-xs text-slate-500 mb-4">暂无场景</p>
       )}
 
-      <div className="flex gap-2">
+      <div className="scene-form">
         <input
           type="text"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && save()}
           placeholder="场景名称（同名则覆盖）"
-          className="flex-1 px-3 py-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-cyan-500 focus:outline-none text-sm"
+          aria-label="场景名称"
         />
         <button
           onClick={save}
           disabled={!newName.trim()}
-          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 rounded-lg text-sm font-medium"
+          className="voice-button"
         >
-          保存当前为场景
+          保存场景
         </button>
       </div>
     </section>

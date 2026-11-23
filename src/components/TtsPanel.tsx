@@ -60,9 +60,9 @@ export function TtsPanel({ settings, onSave, onOpenSettings }: Props) {
   const empty = !text.trim();
 
   return (
-    <section className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="text-lg font-semibold">文字转语音</h3>
+    <section className="voice-panel">
+      <div className="panel-heading">
+        <h2>文字转语音</h2>
         <button
           onClick={onOpenSettings}
           className="text-xs text-cyan-400 hover:text-cyan-300"
@@ -71,35 +71,35 @@ export function TtsPanel({ settings, onSave, onOpenSettings }: Props) {
           {PROVIDER_LABEL[settings.provider]} · 配置
         </button>
       </div>
-      <p className="text-slate-400 text-sm mb-3">输入话术，生成后保存为录音，即可绑定热键播放到虚拟麦克风。</p>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        rows={3}
+        rows={2}
+        aria-label="待合成文本"
         maxLength={5000}
         placeholder="例如：您好，请问有什么可以帮您？"
-        className="w-full px-3 py-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-cyan-500 focus:outline-none text-sm resize-y"
+        className="tts-input"
       />
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="tts-actions">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="录音名称（默认取前 20 字）"
-          className="flex-1 min-w-[10rem] px-3 py-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-cyan-500 focus:outline-none text-sm"
+          aria-label="合成录音名称"
         />
         <button
           onClick={() => run("preview")}
           disabled={empty || busy !== null}
-          className="px-4 py-2 bg-slate-600 hover:bg-slate-500 disabled:opacity-50 rounded-lg text-sm font-medium"
+          className="voice-button voice-primary"
         >
           {busy === "preview" ? "合成中…" : "试听"}
         </button>
         <button
           onClick={() => run("save")}
           disabled={empty || busy !== null}
-          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 rounded-lg text-sm font-medium"
+          className="voice-button"
         >
-          {busy === "save" ? "保存中…" : "生成并保存为录音"}
+          {busy === "save" ? "保存中…" : "保存为录音"}
         </button>
       </div>
       {error && (
