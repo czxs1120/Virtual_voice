@@ -9,3 +9,5 @@ src-tauri/debug.log
 rustup-init.exe
 debug.log
 reasonix.toml
+wix314-binaries/
+*.log

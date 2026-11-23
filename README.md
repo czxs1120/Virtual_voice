@@ -10,7 +10,7 @@
 
 借助 VB-Cable 虚拟麦克风，将录音与实时语音中转至语音软件，帮助语音客服等岗位减少重复话术的工作。
 
-[![版本](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
+[![版本](https://img.shields.io/badge/version-1.9.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
 [![Tauri](https://img.shields.io/badge/Tauri-2.5.0-2c2255?style=flat&logo=tauri)](https://tauri.app/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb?style=flat&logo=react)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -24,8 +24,13 @@
 ## 功能特性
 
 - **录音管理** - 录制、导入、播放、删除语音片段
-- **快捷键播放** - 使用 Ctrl+1~9 数字键快速播放录音
-- **实时语音中转** - 将麦克风声音实时转发到虚拟音频设备
+- **快捷键播放** - 为每条录音绑定 F1–F12 或 Ctrl/Alt/Shift 组合键（全局热键，应用失焦时也可用，冲突自动改绑）
+- **分组管理** - 录音按分组折叠展示，支持搜索
+- **波形裁剪** - 波形预览、拖拽裁剪、一键去除首尾静音
+- **实时语音中转** - 将麦克风声音实时转发到虚拟音频设备，带增益、噪声门、限幅和电平表
+- **文字转语音** - 输入话术生成录音；服务商自行配置（Windows 系统语音 / OpenAI 兼容接口 / Azure），本项目不提供官方模型
+- **场景预设** - 保存设备与音频参数组合，一键切换
+- **系统托盘** - 关闭窗口最小化到托盘，托盘菜单可停止播放 / 开关中转
 - **虚拟麦克风支持** - 集成 VB-Audio Virtual Cable 驱动安装/卸载
 - **迷你播放器模式** - 可收起为紧凑的悬浮播放器
 - **音频设备管理** - 灵活选择输入输出设备
@@ -49,7 +54,7 @@
 │              │  [开启中转]                                   │
 │              │                                              │
 ├──────────────┴──────────────────────────────────────────────┤
-│  Ctrl+数字键快速播放  │ 虚拟麦克风: 就绪  │ v1.3.0          │
+│  Ctrl+数字键快速播放  │ 虚拟麦克风: 就绪  │ v1.9.0          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -125,14 +130,36 @@ npm run tauri build
 
 ### 快捷键播放
 
-- 在录音列表中，选择 Ctrl+1~9 数字绑定
-- 按下对应 Ctrl+数字键 即可快速播放录音
+- 在录音列表中点击热键框，按下想要的组合键（F1–F12 可单独使用，字母/数字需配合 Ctrl/Alt/Shift）
+- 按 Esc 取消录入，Backspace/Delete 清除绑定
+- 旧版本的 Ctrl+1~9 绑定会自动迁移
 
 ### 实时语音中转
 
 1. 选择输出设备（VB-Audio Virtual Cable）
 2. 点击 **开启中转** 按钮
 3. 此时其他应用（如 Discord、Teams 等）可以将输入源切换到 VB-Audio 设备来接收语音
+4. 可按需调整增益、开启噪声门（过滤键盘声和底噪）与限幅（防止爆音），中转过程中实时生效
+
+### 文字转语音
+
+1. 前往 **设置** → **语音合成**，选择服务商：
+   - **Windows 系统语音**：免费、离线，无需任何配置
+   - **OpenAI 兼容接口**：填写接口地址、模型、音色和你自己的 API Key（本地部署的服务通常无需 Key）
+   - **Azure 语音服务**：填写区域、音色和你自己的订阅密钥
+2. 点击 **测试合成** 确认配置可用
+3. 在主界面“文字转语音”中输入话术，**试听** 或 **生成并保存为录音**，之后即可像普通录音一样绑定热键
+
+> 本软件为非盈利项目，不提供任何官方模型或密钥。API Key 保存在 Windows 凭据管理器中；合成请求由本机直接发送到你配置的服务商，费用与隐私政策以服务商为准。
+
+### 场景预设
+
+调好输入/输出设备、监听、音量和中转参数后，在“场景预设”中输入名称保存；之后点击场景名即可一键切换。
+
+### 驱动说明
+
+VB-CABLE 为 VB-Audio 的捐赠软件，随产品分发前请确认其许可条款。也可以使用 VoiceMeeter、Virtual Audio Cable 等其他虚拟声卡，
+在“设置 → 音频设备”中选择对应输出即可。详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 ---
 
@@ -141,20 +168,29 @@ npm run tauri build
 ```
 virtual_voice/
 ├── src/                    # React 前端源码
-│   ├── App.tsx            # 主应用组件
-│   ├── main.tsx           # 入口文件
-│   └── index.css          # 全局样式
+│   ├── App.tsx            # 主应用编排
+│   ├── components/        # UI 组件（列表、设置、迷你播放器）
+│   ├── hooks/             # 状态消息、全局热键等 hooks
+│   ├── lib/               # Tauri API 封装、WAV 编解码
+│   ├── types.ts           # 共享类型
+│   ├── main.tsx
+│   └── index.css
 ├── src-tauri/              # Tauri 后端源码
 │   ├── src/
-│   │   ├── main.rs        # Rust 主入口
-│   │   ├── lib.rs         # 库文件
-│   │   └── driver.rs      # 驱动安装逻辑
-│   ├── Cargo.toml         # Rust 依赖配置
-│   ├── tauri.conf.json    # Tauri 配置文件
-│   └── drivers/           # 虚拟驱动文件
-├── package.json           # Node.js 依赖配置
-├── vite.config.ts         # Vite 配置
-└── tailwind.config.js     # Tailwind CSS 配置
+│   │   ├── main.rs
+│   │   ├── lib.rs         # 录音/播放/中转/配置
+│   │   ├── dsp.rs         # 中转增益/噪声门/限幅
+│   │   ├── tray.rs        # 系统托盘
+│   │   ├── tts.rs         # 文字转语音（多服务商）
+│   │   ├── secrets.rs     # API Key 存储（Windows 凭据管理器）
+│   │   └── driver.rs      # VB-CABLE 驱动管理
+│   ├── capabilities/      # 权限（含 Windows 全局热键）
+│   ├── resources/drivers/ # 虚拟驱动资源
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── package.json
+├── vite.config.ts
+└── tailwind.config.js
 ```
 
 ---

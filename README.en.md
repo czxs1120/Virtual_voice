@@ -10,7 +10,7 @@
 
 Using VB-Cable virtual microphone, forward recordings and real-time voice to voice software, helping voice customer service and similar positions reduce repetitive speech work.
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
+[![Version](https://img.shields.io/badge/version-1.9.0-blue.svg)](https://github.com/czxs1120/Virtual_voice)
 [![Tauri](https://img.shields.io/badge/Tauri-2.5.0-2c2255?style=flat&logo=tauri)](https://tauri.app/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb?style=flat&logo=react)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -24,8 +24,13 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 ## Features
 
 - **Recording Management** - Record, import, play, and delete audio clips
-- **Keyboard Shortcuts** - Play recordings quickly using Ctrl+1~9 keys
-- **Real-time Voice Transfer** - Forward microphone audio to virtual audio devices in real-time
+- **Keyboard Shortcuts** - Bind F1–F12 or Ctrl/Alt/Shift combos per clip (global, work when unfocused; conflicts are rebound automatically)
+- **Groups** - Collapsible, searchable recording groups
+- **Waveform Trim** - Waveform preview, drag-to-trim, one-click silence removal
+- **Real-time Voice Transfer** - Forward microphone audio to virtual audio devices, with gain, noise gate, limiter, and level meters
+- **Text-to-Speech** - Generate clips from text using a provider you configure (Windows voices / OpenAI-compatible / Azure); no official model is provided
+- **Scene Presets** - Save device + audio setting combinations and switch in one click
+- **System Tray** - Close hides to tray; tray menu can stop playback / toggle transfer
 - **Virtual Microphone Support** - Integrated VB-Audio Virtual Cable driver installation/uninstallation
 - **Mini Player Mode** - Collapsible compact floating player
 - **Audio Device Management** - Flexible input/output device selection
@@ -49,7 +54,7 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 │              │  [Start Transfer]                            │
 │              │                                              │
 ├──────────────┴──────────────────────────────────────────────┤
-│  Ctrl+Number Keys Quick Play  │ Virtual Mic: Ready  │ v1.3.0│
+│  Ctrl+Number Keys Quick Play  │ Virtual Mic: Ready  │ v1.9.0│
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -125,14 +130,36 @@ After building, the installer is located in `src-tauri/target/release/bundle/nsi
 
 ### Keyboard Shortcuts
 
-- In the recordings list, bind Ctrl+1~9 to recordings
-- Press Ctrl+number to quickly play the assigned recording
+- Click a clip's hotkey box and press the desired combination (F1–F12 alone, letters/digits need Ctrl/Alt/Shift)
+- Esc cancels capture; Backspace/Delete clears the binding
+- Legacy Ctrl+1~9 bindings are migrated automatically
 
 ### Real-time Voice Transfer
 
 1. Select an output device (VB-Audio Virtual Cable)
 2. Click **Start Transfer**
 3. Other applications (e.g., Discord, Teams) can now select VB-Audio as their input device
+4. Adjust gain, enable the noise gate (removes keyboard noise / hiss) and limiter (prevents clipping); changes apply live
+
+### Text-to-Speech
+
+1. Go to **Settings** → **语音合成 (TTS)** and pick a provider:
+   - **Windows voices**: free and offline, nothing to configure
+   - **OpenAI-compatible**: base URL, model, voice, and your own API key (self-hosted servers usually need no key)
+   - **Azure Speech**: region, voice, and your own subscription key
+2. Click **Test** to verify the setup
+3. Type text in the TTS panel, preview it or save it as a clip, then bind a hotkey like any other recording
+
+> This is a non-profit project and ships no hosted model or keys. API keys are stored in the Windows Credential Manager, and requests go directly from your machine to the provider you configured.
+
+### Scene Presets
+
+Once devices, monitoring, volume, and transfer settings are tuned, save them under a name in **Scene Presets** and click it to switch later.
+
+### Driver Notes
+
+VB-CABLE is donationware from VB-Audio; check its license before redistributing it with a product. Any other virtual audio device
+(VoiceMeeter, Virtual Audio Cable, etc.) can be selected as the output instead. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
@@ -147,7 +174,11 @@ virtual_voice/
 ├── src-tauri/              # Tauri backend source
 │   ├── src/
 │   │   ├── main.rs        # Rust main entry
-│   │   ├── lib.rs         # Library file
+│   │   ├── lib.rs         # Recording, playback, transfer, config
+│   │   ├── dsp.rs         # Transfer gain / noise gate / limiter
+│   │   ├── tray.rs        # System tray
+│   │   ├── tts.rs         # Text-to-speech providers
+│   │   ├── secrets.rs     # API key storage (Windows Credential Manager)
 │   │   └── driver.rs      # Driver installation logic
 │   ├── Cargo.toml         # Rust dependency configuration
 │   ├── tauri.conf.json    # Tauri configuration

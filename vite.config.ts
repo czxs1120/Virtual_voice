@@ -20,7 +20,12 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_"],
   optimizeDeps: {
-    include: ["@tauri-apps/api/core", "@tauri-apps/api/window", "@tauri-apps/plugin-dialog"],
+    include: [
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/window",
+      "@tauri-apps/plugin-dialog",
+      "@tauri-apps/plugin-global-shortcut",
+    ],
   },
   build: {
     target: ["es2021", "chrome100", "safari13"],
