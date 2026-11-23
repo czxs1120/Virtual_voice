@@ -277,28 +277,26 @@ function App() {
     try {
       const devices = await api.getAudioDevices();
       setAudioDevices(devices);
-      const current = selectedOutputDevice;
       const saved = configRef.current.output_device || "";
-      const pick =
+      setSelectedOutputDevice((current) =>
         (current && devices.some((d) => d.name === current) && current) ||
         (saved && devices.some((d) => d.name === saved) && saved) ||
         devices[0]?.name ||
-        "";
-      setSelectedOutputDevice(pick);
+        "",
+      );
     } catch (e) {
       console.error("Failed to get audio devices:", e);
     }
     try {
       const devices = await api.getAudioInputDevices();
       setInputDevices(devices);
-      const current = selectedInputDevice;
       const saved = configRef.current.input_device || "";
-      const pick =
+      setSelectedInputDevice((current) =>
         (current && devices.some((d) => d.name === current) && current) ||
         (saved && devices.some((d) => d.name === saved) && saved) ||
         devices[0]?.name ||
-        "";
-      setSelectedInputDevice(pick);
+        "",
+      );
     } catch (e) {
       console.error("Failed to get input devices:", e);
     }
@@ -320,7 +318,9 @@ function App() {
     } catch (e) {
       console.error("Failed to check VB-CABLE status:", e);
     }
-  }, [selectedOutputDevice, selectedInputDevice]);
+    // Read current selections through state updaters so device/scene changes
+    // never recreate this callback and rerun config initialization.
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -1045,7 +1045,7 @@ function App() {
                 : "..."}
           </span>
           <span>|</span>
-          <span>Virtual Voice v1.6.0</span>
+          <span>Virtual Voice v1.8.0</span>
         </span>
       </footer>
     </div>

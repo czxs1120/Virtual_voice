@@ -190,13 +190,16 @@ fn find_audio_file(dir: &Path, id: u64) -> Option<(PathBuf, &'static str)> {
     None
 }
 
-fn remove_audio_files(dir: &Path, id: u64) -> Result<(), String> {
+fn remove_audio_files(dir: &Path, id: u64, keep_ext: Option<&str>) -> Result<(), String> {
     let dir_canon = if dir.exists() {
         dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
     } else {
         dir.to_path_buf()
     };
     for ext in AUDIO_EXTENSIONS {
+        if keep_ext == Some(*ext) {
+            continue;
+        }
         let path = dir.join(format!("audio_{}.{}", id, ext));
         if path.exists() {
             let canonical = path.canonicalize().map_err(|e| e.to_string())?;
@@ -325,20 +328,30 @@ fn delete_recording(id: u64, recordings_dir: Option<String>) -> Result<(), Strin
         }
         std::fs::remove_file(json_path).map_err(|e| e.to_string())?;
     }
-    remove_audio_files(&dir, id)?;
+    remove_audio_files(&dir, id, None)?;
     Ok(())
 }
 
 #[tauri::command]
 fn save_audio(id: u64, audio_data: String, recordings_dir: Option<String>) -> Result<(), String> {
+    use std::io::Write;
+
     let dir = get_recordings_dir(recordings_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let (ext, b64) = ext_from_data_url(&audio_data);
-    // Replace any previous format for this id so we don't leave orphans.
-    let _ = remove_audio_files(&dir, id);
-    let path = dir.join(format!("audio_{}.{}", id, ext));
     let decoded = base64_decode(b64)?;
-    std::fs::write(path, decoded).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("audio_{}.{}", id, ext));
+
+    // Keep the original until the complete replacement is on disk. Using the
+    // same directory keeps persist's atomic rename on the same filesystem.
+    // tempfile also supports replacing an existing destination on Windows.
+    let mut pending = tempfile::NamedTempFile::new_in(&dir).map_err(|e| e.to_string())?;
+    pending.write_all(&decoded).map_err(|e| e.to_string())?;
+    pending.as_file().sync_all().map_err(|e| e.to_string())?;
+    pending.persist(&path).map_err(|e| e.to_string())?;
+
+    // Only remove the previous formats after committing the new audio.
+    remove_audio_files(&dir, id, Some(ext))?;
     Ok(())
 }
 
@@ -1177,6 +1190,43 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_audio_preserves_original_on_invalid_base64() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("audio_42.webm");
+        std::fs::write(&original, b"original recording").unwrap();
+        let result = save_audio(42, "data:audio/wav;base64,!!!".into(),
+            Some(dir.path().to_string_lossy().into_owned()));
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(original).unwrap(), b"original recording");
+    }
+
+    #[test]
+    fn save_audio_preserves_original_when_destination_cannot_be_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("audio_42.webm");
+        std::fs::write(&original, b"original recording").unwrap();
+        // A directory at the destination forces the commit/rename to fail.
+        std::fs::create_dir(dir.path().join("audio_42.wav")).unwrap();
+        let result = save_audio(42, "data:audio/wav;base64,bmV3".into(),
+            Some(dir.path().to_string_lossy().into_owned()));
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(original).unwrap(), b"original recording");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn save_audio_replaces_existing_file_and_removes_previous_format() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("audio_42.webm"), b"old webm").unwrap();
+        std::fs::write(dir.path().join("audio_42.wav"), b"old wav").unwrap();
+        save_audio(42, "data:audio/wav;base64,bmV3".into(),
+            Some(dir.path().to_string_lossy().into_owned())).unwrap();
+        assert_eq!(std::fs::read(dir.path().join("audio_42.wav")).unwrap(), b"new");
+        assert!(!dir.path().join("audio_42.webm").exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     #[test]
     fn legacy_config_loads_with_defaults() {
