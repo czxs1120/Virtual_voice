@@ -15,7 +15,7 @@
 [![React](https://img.shields.io/badge/React-18.2-61dafb?style=flat&logo=react)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**本项目使用 [Trae CN](https://trae.ai)、[Reasonix (Deepseek-V4)](https://www.reasonix.top) 和 [ZCode (GLM5.2)](https://zcode.top) 开发完成。**
+**本项目使用 [Trae CN](https://trae.ai)、[Reasonix (Deepseek-V4)](https://www.reasonix.top)、[ZCode (GLM5.2)](https://zcode.top) 和 [ChatGPT](https://chatgpt.com/) 开发完成。**
 
 </div>
 

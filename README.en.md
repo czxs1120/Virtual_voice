@@ -15,7 +15,7 @@ Using VB-Cable virtual microphone, forward recordings and real-time voice to voi
 [![React](https://img.shields.io/badge/React-18.2-61dafb?style=flat&logo=react)](https://react.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**This project is developed using [Trae CN](https://trae.ai), [Reasonix (Deepseek-V4)](https://www.reasonix.top), and [ZCode (GLM5.2)](https://zcode.top).**
+**This project is developed using [Trae CN](https://trae.ai), [Reasonix (Deepseek-V4)](https://www.reasonix.top), [ZCode (GLM5.2)](https://zcode.top), and [ChatGPT](https://chatgpt.com/).**
 
 </div>
 
